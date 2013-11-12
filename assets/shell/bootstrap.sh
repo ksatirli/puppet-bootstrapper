@@ -87,10 +87,22 @@ else
 		yum ${ARGS_YUM} install puppet > /dev/null 2>&1
 
 
-		### gather user input
-		while [[ -z "$var" ]]
-		echo "# 4 - What is the HTTP(s) location of your Puppet manifests?"
-		read REPOSITORY_HOST
+		### loop while input is empty
+		while [[ -z "${REPOSITORY_HOST}" ]]
+		do
+			echo "# 4 - What is the HTTP(s) location of your Puppet manifests?"
+			read REPOSITORY_HOST
+
+			# detect repository type by looking at the last three characters of the address
+			# empty responses indicate that this is not a git repository, so default to svn
+			REPOSITORY_TYPE="${REPOSITORY_HOST:${#REPOSITORY_HOST} - 3}"
+
+			if [[ "${REPOSITORY_TYPE}" != "git" ]]
+			then
+				REPOSITORY_TYPE="svn"
+			fi
+		done
+
 
 		# detect repository type by looking at the last three characters of the address
 		# empty responses indicate that this is not a git repository, so default to svn
