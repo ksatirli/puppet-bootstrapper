@@ -1,3 +1,0 @@
-Hallo
-
-<?php echo "HAL"; ?>
