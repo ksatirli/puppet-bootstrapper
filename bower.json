@@ -1,0 +1,24 @@
+{
+  "name": "con.structed.io",
+  "version": "0.1",
+  "authors": [
+    "Kerim Satirli <k.satirli@structed.io>"
+  ],
+  "description": "con.structed.io - masterless Puppet bootstraper",
+  "main": "index.html",
+  "keywords": [
+    "puppet",
+    "bootstrapper",
+    "shell",
+    "bash",
+    "infrastructure"
+  ],
+  "license": "Apache Software License 2.0",
+  "homepage": "http://con.structed.io/",
+  "private": true,
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "assets/components",
+  ]
+}
