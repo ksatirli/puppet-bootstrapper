@@ -2,7 +2,7 @@
   "name": "con.structed.io",
   "version": "0.1",
   "authors": [
-    "Kerim Satirli <k.satirli@structed.io>"
+    "structed.io Team <team@structed.io>"
   ],
   "description": "con.structed.io - masterless Puppet bootstraper",
   "main": "index.html",
@@ -20,5 +20,11 @@
     "**/.*",
     "node_modules",
     "assets/components",
-  ]
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "purecss": "~0.3.0"
+  }
 }
