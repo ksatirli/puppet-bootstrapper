@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 ###
   #           __                      __             __    _
@@ -50,13 +50,13 @@ done
 echolog()
 {
 	### check if file exists, is writable and if not: touch it
-	if [ ! -e "${FILE_LOG}" ]
+	if [[ ! -e "${FILE_LOG}" ]]
 	then
 	  touch "${FILE_LOG}"
 	fi
 
 
-  if [ -w "${FILE_LOG}" ]
+  if [[ -w "${FILE_LOG}" ]]
   then
     echo "${1}"
     echo "[$HOSTNAME] [$(date +'%Y-%m-%dT%H:%M:%S%z')] $@" >> ${FILE_LOG}
@@ -70,7 +70,7 @@ echolog()
 
 
 ### check if script is being run as root
-if [ "$(id -u)" != "0" ]
+if [[ "$(id -u)" != '0' ]]
 then
   echo " "
   echo "#####"
@@ -80,8 +80,8 @@ then
   exit 1
 
 else
-  ### check if script has been run before
-  if [ ! -f "${PUPPET_LOCK}" ]
+  ### continue if script has not been run before
+  if [[ ! -f "${PUPPET_LOCK}" ]]
   then
 
     clear
@@ -118,34 +118,52 @@ else
     yum ${ARGS_YUM} install puppet > ${FILE_LOG} 2>&1
 
 
-    ### loop while input is empty
-    while [[ -z "${REPOSITORY_HOST}" ]]
-    do
-      echolog "#4 - What is the HTTP(s) location of your Puppet manifests?"
-      read REPOSITORY_HOST
+    ### check if options have been previously set, see CONSTRUCT-11
+    if [[ ! -z "${BOOTSTRAP_REPO}" && ! -z "${BOOTSTRAP_USER}" && ! -z "${BOOTSTRAP_PASS}" ]]
+    then
+      echolog "#4 - Automatically setting repository details"
+      echolog "BOOTSTRAP_REPO: ${BOOTSTRAP_REPO}"
+      echolog "BOOTSTRAP_USER: ${BOOTSTRAP_USER}"
+      ### stop password from being logged in plain-text
+      echolog "BOOTSTRAP_PASS: $(for a in `seq ${#BOOTSTRAP_PASS}`; do echo -n '*'; done)"
+    else
+      ### loop while input is empty or not previously set
+      while [[ -z "${BOOTSTRAP_REPO}" ]]
+      do
+        echolog "#4 - What is the HTTP(s) location of your Puppet manifests?"
+        read BOOTSTRAP_REPO
+      done
+    fi
 
-      # detect repository type by looking at the last three characters of the
-      # address; empty responses would indicate that this is not a git repo,
-      # so default to svn instead
-      REPOSITORY_TYPE="${REPOSITORY_HOST:${#REPOSITORY_HOST} - 3}"
+    # detect repository type by looking at the last three characters of the
+    # address; empty responses would indicate that this is not a git repo,
+    # so default to svn instead
+    BOOTSTRAP_TYPE="${BOOTSTRAP_REPO:${#BOOTSTRAP_REPO} - 3}"
 
-      if [[ "${REPOSITORY_TYPE}" != "git" ]]
-      then
-        REPOSITORY_TYPE="subversion"
-      fi
-    done
+    if [[ "${BOOTSTRAP_TYPE}" != "git" ]]
+    then
+      BOOTSTRAP_TYPE="subversion"
+    fi
 
 
     ### manually install VCS tools
-    echo "# 4 - installing VCS tools"
-    yum ${ARGS_YUM} install ${REPOSITORY_TYPE}
+    echo "#4 - installing VCS tools"
+    yum ${ARGS_YUM} install ${BOOTSTRAP_TYPE}
 
 
     ### create Puppet run scripts
-    echo "# 5 - creating Puppet run scripts"
+    echo "#5 - creating Puppet run scripts"
+
+    ### check if  init script filename has been set or default to safe choice
+    if [[ -z "${BOOTSTRAP_INIT}" ]]
+    then
+      BOOTSTRAP_INIT='init.pp'
+    fi
+
     # TODO(kerim): find way to get git / svn clone of files (see: CONSTRUCT-4)
 
-    echo -n "puppet apply /etc/puppet/manifests/structed.pp" > ${FILE_PUPPET_APPLY}
+
+    echo -n "puppet apply /etc/puppet/manifests/${BOOTSTRAP_INIT}" > ${FILE_PUPPET_APPLY}
     echo -n "${PUPPET_DIR}/${FILE_PUPPET_UPDATE}
   ${FILE_PUPPET_APPLY}" > ${FILE_PUPPET_RUN}
 
