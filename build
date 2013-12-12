@@ -49,11 +49,11 @@ done
 ### convience function to echo and log with a single call
 echolog()
 {
-  ### check if file exists, is writable and if not: touch it
-  if [[ ! -e "${FILE_LOG}" ]]
-  then
-    touch "${FILE_LOG}"
-  fi
+	### check if file exists, is writable and if not: touch it
+	if [[ ! -e "${FILE_LOG}" ]]
+	then
+	  touch "${FILE_LOG}"
+	fi
 
 
   if [[ -w "${FILE_LOG}" ]]
@@ -163,8 +163,8 @@ else
     # TODO(kerim): find way to get git / svn clone of files (see: CONSTRUCT-4)
 
 
-    echo -n "puppet apply /etc/puppet/${BOOTSTRAP_INIT}" > ${FILE_PUPPET_APPLY}
-    echo -n "sh ${FILE_PUPPET_UPDATE}
+    echo -n "puppet apply /etc/puppet/manifests/${BOOTSTRAP_INIT}" > ${FILE_PUPPET_APPLY}
+    echo -n "${PUPPET_DIR}/${FILE_PUPPET_UPDATE}
   ${FILE_PUPPET_APPLY}" > ${FILE_PUPPET_RUN}
 
 
