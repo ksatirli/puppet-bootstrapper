@@ -22,6 +22,7 @@ TIMESTAMP="$(date -R)"
 PUPPET_RPM="http://yum.puppetlabs.com/el/6/products/x86_64/puppetlabs-release-6-7.noarch.rpm"
 PUPPET_DIR="${HOME}/.puppet${RANDOM}"
 PUPPET_LOCK="${PUPPET_DIR}/puppet-bootstrap.lock"
+PUPPET_HOME="/etc/puppet"
 FILE_PUPPET_APPLY="${PUPPET_DIR}/puppet-apply.sh"
 FILE_PUPPET_RUN="${PUPPET_DIR}/puppet-run.sh"
 FILE_PUPPET_UPDATE="${PUPPET_DIR}/puppet-update.sh"
@@ -118,19 +119,20 @@ else
     yum ${ARGS_YUM} install puppet > ${FILE_LOG} 2>&1
 
 
-    ### check if options have been previously set, see CONSTRUCT-11
-    if [[ ! -z "${BOOTSTRAP_REPO}" && ! -z "${BOOTSTRAP_USER}" && ! -z "${BOOTSTRAP_PASS}" ]]
+    ### check if repository have been previously set, see CONSTRUCT-11
+    if [[ ! -z "${BOOTSTRAP_REPO}" ]]
     then
       echolog "#4 - Automatically setting repository details"
       echolog "BOOTSTRAP_REPO: ${BOOTSTRAP_REPO}"
-      echolog "BOOTSTRAP_USER: ${BOOTSTRAP_USER}"
+
       ### stop password from being logged in plain-text
-      echolog "BOOTSTRAP_PASS: $(for a in `seq ${#BOOTSTRAP_PASS}`; do echo -n '*'; done)"
+      ###echolog "BOOTSTRAP_PASS: $(for a in `seq ${#BOOTSTRAP_PASS}`; do echo -n '*'; done)"
     else
       ### loop while input is empty or not previously set
       while [[ -z "${BOOTSTRAP_REPO}" ]]
       do
         echolog "#4 - What is the HTTP(s) location of your Puppet manifests?"
+        echo "Acceptable format: http(s)://user:pass@structed.io/repository"
         read BOOTSTRAP_REPO
       done
     fi
@@ -148,6 +150,8 @@ else
 
     ### manually install VCS tools
     echo "#4 - installing VCS tools"
+
+    ### we considered installing this via Puppet, but there's no added advantage
     yum ${ARGS_YUM} install ${BOOTSTRAP_TYPE}
 
 
@@ -160,8 +164,20 @@ else
       BOOTSTRAP_INIT='init.pp'
     fi
 
-    # TODO(kerim): find way to get git / svn clone of files (see: CONSTRUCT-4)
+    ### get rid of default Puppet directory
+    rm -rf ${PUPPET_HOME}
 
+    ### check out manifests and associated files, see CONSTRUCT-4
+    if [[ "${BOOTSTRAP_TYPE}" == "git" ]]
+    then
+    	### get it all!
+    	git clone ${BOOTSTRAP_REPO} ${PUPPET_HOME}
+    	git pull
+    	git submodule init
+    	git submodule update
+    else
+    	svn co ${BOOTSTRAP_REPO} ${PUPPET_HOME}
+    fi
 
     echo -n "puppet apply /etc/puppet/manifests/${BOOTSTRAP_INIT}" > ${FILE_PUPPET_APPLY}
     echo -n "${PUPPET_DIR}/${FILE_PUPPET_UPDATE}
