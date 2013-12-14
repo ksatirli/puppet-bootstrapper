@@ -19,12 +19,13 @@
   "ignore": [
     "**/.*",
     "node_modules",
-    "assets/components",
+    "assets/bower_components",
     "bower_components",
+    "src/assets/bower_components",
     "test",
     "tests"
   ],
   "dependencies": {
-    "purecss": "~0.3.0"
+    "font-awesome": "~4.0.3"
   }
 }

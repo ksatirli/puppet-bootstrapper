@@ -16,17 +16,17 @@ module.exports = function(grunt) {
 
 
     jshint: {
-      all: ['assets/js/app.js']
+      all: ['src/assets/js/app.js']
     }, // end: jshint
 
 
     compass: {
       dist: {
         options: {
-          sassDir: 'assets/sass/',
-          cssDir: 'assets/css/',
-          javascriptsDir: 'assets/js/',
-          fontsDir: 'assets/fonts/',
+          sassDir: 'src/assets/sass/',
+          cssDir: 'src/assets/css/',
+          javascriptsDir: 'src/assets/js/',
+          fontsDir: 'src/assets/fonts/',
           environment: 'production',
           outputStyle: 'nested',
           noLineComments: true
@@ -38,14 +38,14 @@ module.exports = function(grunt) {
     concat: {
       js: {
         src: [
-          'assets/js/*.js'
+          'src/assets/js/*.js'
         ],
         dest: 'dist/app.js'
       },
       css: {
         src: [
-          'assets/css/app.css',
-          'assets/bower_components/font-awesome/font-awesome.css',
+          'src/assets/css/app.css',
+          'src/assets/bower_components/font-awesome/font-awesome.css',
         ],
         dest: 'dist/styles.css'
       },
@@ -54,7 +54,7 @@ module.exports = function(grunt) {
 
     cssmin: {
       minify: {
-        // cwd: 'assets/css/',
+        // cwd: 'src/assets/css/',
         src: 'dist/styles.css',
         dest: 'dist/app.css'
       }
@@ -78,18 +78,40 @@ module.exports = function(grunt) {
     htmlmin: {
       post: {
         options: {
-          removeComments: true,
+          removeComments: false,
           collapseWhitespace: true,
-          collapseBooleanAttributes: true
+          collapseBooleanAttributes: true,
           removeAttributeQuotes: true,
           removeRedundantAttributes: true,
           removeEmptyAttributes: true
         },
         files: {
-          'dist/index.html': 'index.html',
+          'dist/index.html': 'src/index.html',
         }
       }
     }, // end: cssmin
+
+
+    copy: {
+      main: {
+        src: 'src/build',
+        dest: 'dist/build',
+      }
+    }, // end: copy
+
+
+    aws: grunt.file.readJSON('aws.json'),
+    s3: {
+      options: {
+        accessKeyId: "<%= aws.accessKeyId %>",
+        secretAccessKey: "<%= aws.secretAccessKey %>",
+        bucket: 'io-structed-con'
+      },
+      publish: {
+        cwd: 'dist/',
+        src: '**'
+      }
+    } // end: s3
 
   });
 
@@ -102,8 +124,8 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks('grunt-contrib-cssmin');
   grunt.loadNpmTasks('grunt-contrib-uglify');
   grunt.loadNpmTasks('grunt-contrib-htmlmin');
-  // grunt.loadNpmTasks('grunt-targethtml');
-  // grunt.loadNpmTasks('grunt-contrib-watch');
+  grunt.loadNpmTasks('grunt-contrib-copy');
+  grunt.loadNpmTasks('grunt-aws');
 
 
   // register tasks
@@ -114,8 +136,12 @@ module.exports = function(grunt) {
     'concat',
     'cssmin',
     'uglify',
-    // 'clean:tmp',
+    'htmlmin',
+    'copy',
+    'clean:tmp',
     // 'targethtml'
   ]);
+
+  grunt.registerTask('publish', [ 's3' ]);
 
 };
