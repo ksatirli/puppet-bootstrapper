@@ -13,6 +13,9 @@ Icon
 .Spotlight-V100
 .Trashes
 
+### Tower.app ###
+Icon.png
+
 ### Bower ###
 bower_components
 
@@ -22,3 +25,7 @@ bower_components
 ### Node ###
 npm-debug.log
 node_modules
+
+### Grunt ###
+dist
+aws.json
