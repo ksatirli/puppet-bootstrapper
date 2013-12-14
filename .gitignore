@@ -17,3 +17,7 @@ Icon.png
 ### Bower ###
 /assets/components
 /assets/components**
+
+
+### SASS ###
+.sass-cache
