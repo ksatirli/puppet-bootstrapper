@@ -15,18 +15,3 @@ Icon
 
 ### Tower.app ###
 Icon.png
-
-### Bower ###
-src/assets/bower_components
-
-### SASS ###
-*.sass-cache
-src/assets/css
-
-### Node ###
-npm-debug.log
-node_modules
-
-### Grunt ###
-dist
-aws.json
