@@ -5,7 +5,6 @@
 .AppleDouble
 .LSOverride
 Icon
-Icon.png
 
 # Thumbnails
 ._*
@@ -14,6 +13,20 @@ Icon.png
 .Spotlight-V100
 .Trashes
 
+### Tower.app ###
+Icon.png
+
 ### Bower ###
-/assets/components
-/assets/components**
+src/assets/bower_components
+
+### SASS ###
+*.sass-cache
+src/assets/css
+
+### Node ###
+npm-debug.log
+node_modules
+
+### Grunt ###
+dist
+aws.json

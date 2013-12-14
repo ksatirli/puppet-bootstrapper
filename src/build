@@ -7,7 +7,7 @@
   #  (__  )/ /_ / /   / /_/ // /__ / /_ /  __// /_/ /_  / // /_/ /
   # /____/ \__//_/    \__,_/ \___/ \__/ \___/ \__,_/(_)/_/ \____/
   #
-  # con.structed.io - masterless Puppet bootstraper
+  # structed.io - masterless Puppet bootstraper
   # bootstraps new instances for nodeless Puppet
   #
   # normal installation: sh -c "$(curl -s http://con.structed.io/build)"

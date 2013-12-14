@@ -1,10 +1,10 @@
 {
   "name": "con.structed.io",
-  "version": "0.1",
+  "version": "1.0.0",
   "authors": [
-    "structed.io Team <team@structed.io>"
+    "Kerim Satirli <k.satirli@structed.io>"
   ],
-  "description": "con.structed.io - masterless Puppet bootstraper",
+  "description": "A masterless Puppet bootstrapper, allowing rapid and automated deployment of Puppet on Linux servers",
   "main": "index.html",
   "keywords": [
     "puppet",
@@ -19,12 +19,13 @@
   "ignore": [
     "**/.*",
     "node_modules",
-    "assets/components",
+    "assets/bower_components",
     "bower_components",
+    "src/assets/bower_components",
     "test",
     "tests"
   ],
   "dependencies": {
-    "purecss": "~0.3.0"
+    "font-awesome": "~4.0.3"
   }
 }

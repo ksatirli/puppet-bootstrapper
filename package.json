@@ -1,0 +1,39 @@
+{
+  "name": "con.structed.io",
+  "version": "1.0.0",
+  "description": "A masterless Puppet bootstrapper",
+  "main": "Gruntfile.js",
+  "dependencies": {
+    "grunt-compass": "~0.3.9",
+    "grunt": "~0.4.2",
+    "grunt-contrib-compass": "~0.7.0",
+    "grunt-contrib-uglify": "~0.2.7",
+    "grunt-contrib-watch": "~0.5.3"
+  },
+  "devDependencies": {
+    "grunt-contrib-htmlmin": "~0.1.3",
+    "grunt-contrib-clean": "~0.5.0",
+    "grunt-contrib-jshint": "~0.7.2",
+    "grunt-contrib-concat": "~0.3.0",
+    "grunt-contrib-cssmin": "~0.7.0",
+    "grunt-contrib-uglify": "~0.2.7",
+    "grunt-aws": "~0.2.8",
+    "grunt-contrib-copy": "~0.4.1"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://ksatirli@bitbucket.org/structedio/con.structed.io.git"
+  },
+  "keywords": [
+    "puppet",
+    "bootstrapper",
+    "shell",
+    "bash",
+    "infrastructure"
+  ],
+  "author": "Kerim Satirli <k.satirli@structed.io>",
+  "license": "Apache License 2.0"
+}
