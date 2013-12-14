@@ -17,10 +17,11 @@ Icon
 Icon.png
 
 ### Bower ###
-/assets/bower_components
+src/assets/bower_components
 
 ### SASS ###
 *.sass-cache
+src/assets/css
 
 ### Node ###
 npm-debug.log
