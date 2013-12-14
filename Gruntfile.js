@@ -6,7 +6,7 @@ module.exports = function(grunt) {
   grunt.initConfig({
 
     clean: {
-      build: [
+      dist: [
         'dist'
       ],
       tmp: [
@@ -128,9 +128,9 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks('grunt-aws');
 
 
-  // register tasks
+  // default task, call with "grunt"
   grunt.registerTask('default', [
-    'clean:build',
+    'clean:dist',
     'jshint',
     'compass',
     'concat',
@@ -142,6 +142,11 @@ module.exports = function(grunt) {
     // 'targethtml'
   ]);
 
-  grunt.registerTask('publish', [ 's3' ]);
+
+  // publish task, call with "grunt publish"
+  grunt.registerTask('publish', [
+    's3',
+    'clean:dist'
+  ]);
 
 };
