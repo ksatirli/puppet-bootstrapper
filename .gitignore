@@ -5,7 +5,6 @@
 .AppleDouble
 .LSOverride
 Icon
-Icon.png
 
 # Thumbnails
 ._*
@@ -15,5 +14,11 @@ Icon.png
 .Trashes
 
 ### Bower ###
-/assets/components
-/assets/components**
+bower_components
+
+### SASS ###
+*.sass-cache
+
+### Node ###
+npm-debug.log
+node_modules
