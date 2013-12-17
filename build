@@ -27,7 +27,7 @@ FILE_PUPPET_APPLY="${PUPPET_DIR}/puppet-apply.sh"
 FILE_PUPPET_RUN="${PUPPET_DIR}/puppet-run.sh"
 FILE_PUPPET_UPDATE="${PUPPET_DIR}/puppet-update.sh"
 FILE_CRONTAB="${PUPPET_DIR}/puppet-crontab.txt"
-FILE_LOG="${PUPPET_DIR}/constructedio.log"
+FILE_LOG="${PUPPET_DIR}/puppet-bootstrapper.log"
 ARGS_CURL="-s"
 ARGS_RPM="--quiet --install"
 ARGS_YUM="--assumeyes --quiet"
@@ -88,7 +88,7 @@ else
     clear
     echo " "
     echo "#####"
-    echo "# con.structed.io masterless Puppet bootstrapper"
+    echo "# structed.io masterless Puppet bootstrapper"
     echo "#####"
     echo " "
 
