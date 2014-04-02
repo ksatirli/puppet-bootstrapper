@@ -19,8 +19,8 @@
 ### base config
 RANDOM="$(perl -e 'print int(rand(300));')"
 TIMESTAMP="$(date -R)"
-PUPPET_RPM="http://yum.puppetlabs.com/el/6/products/x86_64/puppetlabs-release-6-7.noarch.rpm"
-PUPPET_DIR="${HOME}/.puppet${RANDOM}"
+#PUPPET_DIR="${HOME}/.puppet${RANDOM}"
+PUPPET_DIR="${HOME}/.puppet"
 PUPPET_LOCK="${PUPPET_DIR}/puppet-bootstrap.lock"
 PUPPET_HOME="/etc/puppet"
 FILE_PUPPET_APPLY="${PUPPET_DIR}/puppet-apply.sh"
@@ -29,8 +29,13 @@ FILE_PUPPET_UPDATE="${PUPPET_DIR}/puppet-update.sh"
 FILE_CRONTAB="${PUPPET_DIR}/puppet-crontab.txt"
 FILE_LOG="${PUPPET_DIR}/puppet-bootstrapper.log"
 ARGS_CURL="-s"
-ARGS_RPM="--quiet --install"
+
+### required for RHEL, CentOS, Amazon Linux
+PUPPET_RPM="http://yum.puppetlabs.com/el/6/products/x86_64/puppetlabs-release-6-7.noarch.rpm"
 ARGS_YUM="--assumeyes --quiet"
+
+### required for Debian, Ubuntu
+ARGS_APT="-y -qq"
 
 
 ### ad-hoc config
@@ -39,8 +44,12 @@ do
   case ${OPTION} in
     v)
       ARGS_CURL="--verbose"
-      ARGS_RPM="--install --verbose --hash"
+
+      ### required for RHEL, CentOS, Amazon Linux
       ARGS_YUM="--assumeyes"
+
+      ### required for Ubuntu / Debian
+      ARGS_APT="--assume-yes"
         ;;
   esac
 done
@@ -50,11 +59,11 @@ done
 ### convience function to echo and log with a single call
 echolog()
 {
-	### check if file exists, is writable and if not: touch it
-	if [[ ! -e "${FILE_LOG}" ]]
-	then
-	  touch "${FILE_LOG}"
-	fi
+  ### check if file exists, is writable and if not: touch it
+  if [[ ! -e "${FILE_LOG}" ]]
+  then
+    touch "${FILE_LOG}"
+  fi
 
 
   if [[ -w "${FILE_LOG}" ]]
@@ -69,13 +78,33 @@ echolog()
   fi
 }
 
+### check for underlying distribution of OS
+if [[  -f /etc/redhat-release ]]
+  then
+    BOOTSTRAP_DIST="redhat"
+elif [[ -f /etc/debian_version ]]
+  then
+    ### figure out codename
+    BOOTSTRAP_DIST_CODE=$(lsb_release --codename --short)
+
+    ### Puppet Labs has codename-based DEB packages available at https://apt.puppetlabs.com/
+    PUPPET_DEB="https://apt.puppetlabs.com/puppetlabs-release-${BOOTSTRAP_DIST_CODE}.deb"
+
+    ### define distro
+    BOOTSTRAP_DIST="debian"
+else
+  echo "#####"
+  echo -e "# Need to run this on \e[0;31mRHEL\e[00m, \e[0;31mCentOS\e[00m, \e[0;31mDebian\e[00m or \e[0;31mUbuntu\e[00m. Aborting."
+  echo "#####"
+fi
+
 
 ### check if script is being run as root
 if [[ "$(id -u)" != '0' ]]
 then
   echo " "
   echo "#####"
-  echo -e "# This script must be run as \e[0;31mroot\e[00m, aborting."
+  echo -e "# Need to be \e[0;31mroot\e[00m to run the bootstrapper. Aborting."
   echo "#####"
   echo " "
   exit 1
@@ -104,24 +133,69 @@ else
 
     ### remove any installed versions of Puppet and Puppet Labs release RPM
     echolog "#2 - removing previously installed versions of Puppet"
-    yum ${ARGS_YUM} remove puppet > ${FILE_LOG} 2>&1
-    yum ${ARGS_YUM} remove puppetlabs-release > ${FILE_LOG} 2>&1
+
+    if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
+      then
+        yum ${ARGS_YUM} remove puppet > ${FILE_LOG} 2>&1
+        yum ${ARGS_YUM} remove puppetlabs-release > ${FILE_LOG} 2>&1
+    elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
+      then
+        apt-get ${ARGS_APT} remove puppet > ${FILE_LOG} 2>&1
+        apt-get ${ARGS_APT} remove puppetlabs-release > ${FILE_LOG} 2>&1
+    fi
 
 
     ### install package for Puppet Labs and clean package database
     echolog "#3 - installing Puppet Labs Release package"
-    curl ${ARGS_CURL} --remote-name ${PUPPET_RPM}
-    yum ${ARGS_YUM} install puppetlabs-release*.rpm > ${FILE_LOG} 2>&1
-    rm ${PUPPET_DIR}/puppetlabs-release*.rpm
+
+
+    if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
+      then
+        ### download official RPM from Puppet Labs
+        curl ${ARGS_CURL} --remote-name ${PUPPET_RPM}
+
+        ### update local repository cache
+        yum ${ARGS_YUM} install puppetlabs-release*.rpm > ${FILE_LOG} 2>&1
+
+        ### get rid of package
+        rm ${PUPPET_DIR}/puppetlabs-release*.rpm
+    elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
+      then
+        ### download official DEB from Puppet Labs
+        curl ${ARGS_CURL} --remote-name ${PUPPET_DEB}
+
+        ### install Puppet Labs repository
+        dpkg -i puppetlabs-release-${BOOTSTRAP_DIST_CODE}.deb
+
+        ### update local repository cache
+        apt-get ${ARGS_APT} update > ${FILE_LOG} 2>&1
+
+        ### get rid of package
+        rm ${PUPPET_DIR}/puppetlabs-release-${BOOTSTRAP_DIST_CODE}.deb
+    fi
+
 
     ### install Puppet via package manager
     echolog "#4 - installing Puppet"
-    yum ${ARGS_YUM} install puppet > ${FILE_LOG} 2>&1
 
+    if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
+      then
+        yum ${ARGS_YUM} install puppet > ${FILE_LOG} 2>&1
+    elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
+      then
+        apt-get ${ARGS_APT} install puppet
+    fi
 
     ### install dependencies via Puppet
     echolog "#5 - installing core dependencies"
-    puppet apply --execute "package { 'crontabs': ensure => 'installed' }"
+
+    if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
+      then
+        puppet apply --execute "package { 'crontabs': ensure => 'installed' }"
+    elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
+      then
+        puppet apply --execute "package { 'cron': ensure => 'installed' }"
+    fi
 
 
     ### check if repository have been previously set, see CONSTRUCT-11
@@ -159,9 +233,9 @@ else
     ### use inline Puppet for better OS support, see CONSTRUCT-13, CONSTRUCT-14
     if [[ "${BOOTSTRAP_TYPE}" == "git" ]]
     then
-    	puppet apply --execute "package { 'git': ensure => 'installed' }"
+      puppet apply --execute "package { 'git': ensure => 'installed' }"
     else
-    	puppet apply --execute "package { 'subversion': ensure => 'installed' }"
+      puppet apply --execute "package { 'subversion': ensure => 'installed' }"
     fi
 
     ### create Puppet run scripts
@@ -179,13 +253,13 @@ else
     ### check out manifests and associated files, see CONSTRUCT-4
     if [[ "${BOOTSTRAP_TYPE}" == "git" ]]
     then
-    	### get it all!
-    	git clone ${BOOTSTRAP_REPO} ${PUPPET_HOME}
-    	git pull
-    	git submodule init
-    	git submodule update
+      ### get it all!
+      git clone ${BOOTSTRAP_REPO} ${PUPPET_HOME}
+      git pull
+      git submodule init
+      git submodule update
     else
-    	svn co ${BOOTSTRAP_REPO} ${PUPPET_HOME}
+      svn co ${BOOTSTRAP_REPO} ${PUPPET_HOME}
     fi
 
     echo -n "puppet apply /etc/puppet/manifests/${BOOTSTRAP_INIT}" > ${FILE_PUPPET_APPLY}
