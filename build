@@ -135,56 +135,73 @@ else
     echo " "
 
     ### create working directory and switch to it
-    mkdir -p ${PUPPET_DIR}
-    touch ${FILE_LOG}
+    mkdir -p "${PUPPET_DIR}"
+    touch "${FILE_LOG}"
 
     ### this needs to appear after the mkdir, otherwise write perm check fails
     echolog "#1 - creating working directory and switching to it"
 
-    cd ${PUPPET_DIR}
-
+    cd "${PUPPET_DIR}"
 
     ### remove any installed versions of Puppet and Puppet Labs release RPM
     echolog "#2 - removing previously installed versions of Puppet"
 
     if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
       then
-        yum ${ARGS_YUM} remove puppet > ${FILE_LOG} 2>&1
-        yum ${ARGS_YUM} remove puppetlabs-release > ${FILE_LOG} 2>&1
+        yum ${ARGS_YUM} remove puppet > "${FILE_LOG}" 2>&1
+        yum ${ARGS_YUM} remove puppetlabs-release > "${FILE_LOG}" 2>&1
     elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
       then
-        apt-get ${ARGS_APT} remove puppet > ${FILE_LOG} 2>&1
-        apt-get ${ARGS_APT} remove puppetlabs-release > ${FILE_LOG} 2>&1
+        apt-get "${ARGS_APT}" remove puppet > "${FILE_LOG}" 2>&1
+        apt-get "${ARGS_APT}" remove puppetlabs-release > "${FILE_LOG}" 2>&1
     fi
 
 
     ### install package for Puppet Labs and clean package database
     echolog "#3 - installing Puppet Labs Release package"
 
-
     if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
       then
         ### download official RPM from Puppet Labs
-        curl ${ARGS_CURL} --remote-name ${PUPPET_RPM}
+        curl "${ARGS_CURL}" --remote-name "${PUPPET_REMOTE_RPM}" > /dev/null 2>&1
 
         ### update local repository cache
-        yum ${ARGS_YUM} install puppetlabs-release*.rpm > ${FILE_LOG} 2>&1
+        yum ${ARGS_YUM} install "${PUPPET_DIR}/${PUPPET_RPM}" > "${FILE_LOG}" 2>&1
 
-        ### get rid of package
-        rm ${PUPPET_DIR}/puppetlabs-release*.rpm
+        ### check if package is present
+        ls -la "${PUPPET_DIR}/${PUPPET_RPM}" > /dev/null 2>&1
+
+        # check exit code
+        if [[ "${?}" -ne 0 ]]
+          then
+            # remove RPM
+            rm -rf "${PUPPET_DIR:?}/${PUPPET_RPM}"
+        fi
+
     elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
       then
         ### download official DEB from Puppet Labs
-        curl ${ARGS_CURL} --remote-name ${PUPPET_DEB}
+        curl "${ARGS_CURL}" --remote-name "${PUPPET_REMOTE_DEB}"
 
         ### install Puppet Labs repository
-        dpkg -i puppetlabs-release-${BOOTSTRAP_DIST_CODE}.deb
+        dpkg "${ARGS_DPKG}" --install "${PUPPET_DEB}" > "${FILE_LOG}" 2>&1
 
         ### update local repository cache
-        apt-get ${ARGS_APT} update > ${FILE_LOG} 2>&1
+        apt-get "${ARGS_APT}" update > "${FILE_LOG}" 2>&1
 
-        ### get rid of package
-        rm ${PUPPET_DIR}/puppetlabs-release-${BOOTSTRAP_DIST_CODE}.deb
+        ### check if package is present
+        ls -la "${PUPPET_DIR}/${PUPPET_DEB}" > /dev/null 2>&1
+
+        # check exit code
+        if [[ "${?}" -ne 0 ]]
+          then
+            # remove DEB
+            rm -rf "${PUPPET_DIR:?}/${PUPPET_DEB}"
+        fi
+
+    else
+      echolog "Unsupported distribution detected. Aborting"
+      exit 1
     fi
 
 
@@ -193,10 +210,10 @@ else
 
     if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
       then
-        yum ${ARGS_YUM} install puppet > ${FILE_LOG} 2>&1
+        yum ${ARGS_YUM} install puppet > "${FILE_LOG}" 2>&1
     elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
       then
-        apt-get ${ARGS_APT} install puppet
+        apt-get "${ARGS_APT}" install puppet
     fi
 
     ### install dependencies via Puppet
@@ -241,7 +258,7 @@ else
 
 
     ### install VCS tools
-    echo "#7 - installing VCS tools"
+    echolog "#7 - installing VCS tools"
 
     ### use inline Puppet for better OS support, see CONSTRUCT-13, CONSTRUCT-14
     if [[ "${BOOTSTRAP_TYPE}" == "git" ]]
@@ -252,52 +269,55 @@ else
     fi
 
     ### create Puppet run scripts
-    echo "#8 - creating Puppet run scripts"
+    echolog "#8 - creating Puppet run scripts"
 
     ### check if  init script filename has been set or default to safe choice
     if [[ -z "${BOOTSTRAP_INIT}" ]]
     then
-      BOOTSTRAP_INIT='init.pp'
+      BOOTSTRAP_INIT="init.pp"
     fi
 
     ### get rid of default Puppet directory
-    rm -rf ${PUPPET_HOME}
+    rm -rf ${PUPPET_HOME:?}
 
     ### check out manifests and associated files, see CONSTRUCT-4
     if [[ "${BOOTSTRAP_TYPE}" == "git" ]]
     then
       ### get it all!
-      git clone ${BOOTSTRAP_REPO} ${PUPPET_HOME}
+      git clone "${BOOTSTRAP_REPO}" "${PUPPET_HOME}"
       git pull
       git submodule init
       git submodule update
     else
-      svn co ${BOOTSTRAP_REPO} ${PUPPET_HOME}
+      svn co "${BOOTSTRAP_REPO}" "${PUPPET_HOME}"
     fi
 
-    echo -n "puppet apply /etc/puppet/manifests/${BOOTSTRAP_INIT}" > ${FILE_PUPPET_APPLY}
-    echo -n "${PUPPET_DIR}/${FILE_PUPPET_UPDATE}
-  ${FILE_PUPPET_APPLY}" > ${FILE_PUPPET_RUN}
+    ### write call for puppet apply file
+    echo -n "puppet apply /etc/puppet/manifests/${BOOTSTRAP_INIT}" > "${FILE_PUPPET_APPLY}"
 
+    ### write calls for puppet run file
+    echo -e "sh ${FILE_PUPPET_UPDATE}" > "${FILE_PUPPET_RUN}"
+    echo -e "sh ${FILE_PUPPET_APPLY}" >> "${FILE_PUPPET_RUN}"
 
     ### create crontab file and add it to crontab
     echolog "#9 - creating crontab"
 
-    echo " " >> ${FILE_CRONTAB}
-    echo "# generated by ${0} on ${TIMESTAMP}" >> ${FILE_CRONTAB}
+    echo " " >> "${FILE_CRONTAB}"
+    echo "# generated by puppet-bootstrapper on ${TIMESTAMP}" >> "${FILE_CRONTAB}"
 
-    echo "*/15 * * * * sleep ${RANDOM} && ${FILE_PUPPET_RUN} > /dev/null" > ${FILE_CRONTAB}
-    crontab -u ${USER} ${FILE_CRONTAB}
+
+    echo "*/30 * * * * && ${FILE_PUPPET_RUN} > /dev/null" > "${FILE_CRONTAB}"
+    crontab -u "${USER}" "${FILE_CRONTAB}"
 
 
     echolog "#10 - run puppet for the first time"
-    echo "sh ${FILE_PUPPET_UPDATE}"
-    echo "sh ${FILE_PUPPET_APPLY}"
+    bash "${FILE_PUPPET_UPDATE}"
+    bash "${FILE_PUPPET_APPLY}"
 
 
     ### create lockfile
     echolog "#11 - creating lockfile"
-    echo -n "last run: ${TIMESTAMP}" > ${PUPPET_LOCK}
+    echo -e "last run: ${TIMESTAMP}" > "${PUPPET_LOCK}"
     echo " "
 
 
