@@ -34,7 +34,6 @@ FILE_LOG="${PUPPET_DIR}/puppet-bootstrapper.log"
 ARGS_CURL="-s"
 ARGS_YUM="--assumeyes --quiet"
 
-
 ### ad-hoc config
 while getopts "v" OPTION
 do
@@ -148,8 +147,8 @@ else
 
     if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
       then
-        yum ${ARGS_YUM} remove puppet > "${FILE_LOG}" 2>&1
-        yum ${ARGS_YUM} remove puppetlabs-release > "${FILE_LOG}" 2>&1
+        yum "${ARGS_YUM}" remove puppet > "${FILE_LOG}" 2>&1
+        yum "${ARGS_YUM}" remove puppetlabs-release > "${FILE_LOG}" 2>&1
     elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
       then
         apt-get "${ARGS_APT}" remove puppet > "${FILE_LOG}" 2>&1
@@ -166,7 +165,7 @@ else
         curl "${ARGS_CURL}" --remote-name "${PUPPET_REMOTE_RPM}" > /dev/null 2>&1
 
         ### update local repository cache
-        yum ${ARGS_YUM} install "${PUPPET_DIR}/${PUPPET_RPM}" > "${FILE_LOG}" 2>&1
+        yum "${ARGS_YUM}" install "${PUPPET_DIR}/${PUPPET_RPM}" > "${FILE_LOG}" 2>&1
 
         ### check if package is present
         ls -la "${PUPPET_DIR}/${PUPPET_RPM}" > /dev/null 2>&1
@@ -210,7 +209,7 @@ else
 
     if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
       then
-        yum ${ARGS_YUM} install puppet > "${FILE_LOG}" 2>&1
+        yum "${ARGS_YUM}" install puppet > "${FILE_LOG}" 2>&1
     elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
       then
         apt-get "${ARGS_APT}" install puppet
