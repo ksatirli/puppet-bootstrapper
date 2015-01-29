@@ -10,16 +10,19 @@
   # structed.io - masterless Puppet bootstraper
   # bootstraps new instances for nodeless Puppet
   #
-  # normal installation: sh -c "$(curl -s http://con.structed.io/build)"
-  # verbose installation: sh -c "$(curl http://con.structed.io/build)" -- -v
+  # normal installation: bash -c "$(curl -s http://con.structed.io/build)"
+  # verbose installation: bash -c "$(curl http://con.structed.io/build)" -- -v
+  #
+  #
+  # TODO:
+  # - build in more exit-code checking
+  # - verify debian support
+  # - option to allow for changing puppet version
   #
   ##
 
-
 ### base config
-RANDOM="$(perl -e 'print int(rand(300));')"
-TIMESTAMP="$(date -R)"
-#PUPPET_DIR="${HOME}/.puppet${RANDOM}"
+TIMESTAMP=$(date -R)
 PUPPET_DIR="${HOME}/.puppet"
 PUPPET_LOCK="${PUPPET_DIR}/puppet-bootstrap.lock"
 PUPPET_HOME="/etc/puppet"
@@ -29,13 +32,7 @@ FILE_PUPPET_UPDATE="${PUPPET_DIR}/puppet-update.sh"
 FILE_CRONTAB="${PUPPET_DIR}/puppet-crontab.txt"
 FILE_LOG="${PUPPET_DIR}/puppet-bootstrapper.log"
 ARGS_CURL="-s"
-
-### required for RHEL, CentOS, Amazon Linux
-PUPPET_RPM="http://yum.puppetlabs.com/el/6/products/x86_64/puppetlabs-release-6-7.noarch.rpm"
 ARGS_YUM="--assumeyes --quiet"
-
-### required for Debian, Ubuntu
-ARGS_APT="-y -qq"
 
 
 ### ad-hoc config
@@ -49,7 +46,8 @@ do
       ARGS_YUM="--assumeyes"
 
       ### required for Ubuntu / Debian
-      ARGS_APT="--assume-yes"
+      ARGS_APT="-y"
+      ARGS_DPKG=""
         ;;
   esac
 done
@@ -60,16 +58,16 @@ done
 echolog()
 {
   ### check if file exists, is writable and if not: touch it
-  if [[ ! -e "${FILE_LOG}" ]]
+  if [[ ! -f "${FILE_LOG}" ]]
   then
     touch "${FILE_LOG}"
   fi
 
-
-  if [[ -w "${FILE_LOG}" ]]
+  ### check if file is writable, if not, abort
+  if [[ ! -w "${FILE_LOG}" ]]
   then
     echo "${1}"
-    echo "[$HOSTNAME] [$(date +'%Y-%m-%dT%H:%M:%S%z')] $@" >> ${FILE_LOG}
+    echo "[${HOSTNAME}] [$(date +'%Y-%m-%dT%H:%M:%S%z')] ${*}" >> "${FILE_LOG}"
   else
     echo "#####"
     echo -e "# You do not have write permissions for \e[0;31m${FILE_LOG}\e[00m, aborting."
@@ -79,19 +77,34 @@ echolog()
 }
 
 ### check for underlying distribution of OS
-if [[  -f /etc/redhat-release ]]
+if [[ -f "/etc/redhat-release" ]]
   then
     BOOTSTRAP_DIST="redhat"
-elif [[ -f /etc/debian_version ]]
+    OS_VERSION_MAJ=$(rpm -q --qf '%{VERSION}' "$(rpm -q --whatprovides redhat-release)")
+
+    ### Puppet Labs has Major Version-based YUM packages available at https://yum.puppetlabs.com/
+    PUPPET_REMOTE_URL="https://yum.puppetlabs.com"
+    PUPPET_RPM="puppetlabs-release-el-${OS_VERSION_MAJ}.noarch.rpm"
+    PUPPET_REMOTE_RPM="${PUPPET_REMOTE_URL}/${PUPPET_RPM}"
+
+    ARGS_YUM="--assumeyes --quiet"
+
+elif [[ -f "/etc/debian_version" ]]
   then
     ### figure out codename
     BOOTSTRAP_DIST_CODE=$(lsb_release --codename --short)
 
     ### Puppet Labs has codename-based DEB packages available at https://apt.puppetlabs.com/
-    PUPPET_DEB="https://apt.puppetlabs.com/puppetlabs-release-${BOOTSTRAP_DIST_CODE}.deb"
+    PUPPET_REMOTE_URL="https://apt.puppetlabs.com"
+    PUPPET_DEB="puppetlabs-release-${BOOTSTRAP_DIST_CODE}.deb"
+    PUPPET_REMOTE_DEB="${PUPPET_REMOTE_URL}/${PUPPET_RPM}"
 
     ### define distro
     BOOTSTRAP_DIST="debian"
+
+    ARGS_APT="-y -qq"
+    ARGS_DPKG="--quiet"
+
 else
   echo "#####"
   echo -e "# Need to run this on \e[0;31mRHEL\e[00m, \e[0;31mCentOS\e[00m, \e[0;31mDebian\e[00m or \e[0;31mUbuntu\e[00m. Aborting."
@@ -99,8 +112,8 @@ else
 fi
 
 
-### check if script is being run as root
-if [[ "$(id -u)" != '0' ]]
+### check if script is being run as root; inspired by http://dcmnt.me/1KaHE3q
+if [[ "${EUID}" -ne 0 ]]
 then
   echo " "
   echo "#####"
