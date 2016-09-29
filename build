@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.1.7
+ #   structed.io - Puppet Bootstrapper v2.1.8
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -39,6 +39,7 @@ OPTS_SKIP_OUT="false"
 OPTS_SKIP_LOG="false"
 OPTS_SKIP_TEST="false"
 OPTS_SKIP_LOCK="false"
+OPTS_SKIP_BACKUP="false"
 OPTS_WITH_DEEPMERGE="false"
 OPTS_WITH_LIBRARIAN="false"
 OPTS_WITH_R10K="false"
@@ -50,7 +51,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.1.7"
+BOOTSTRAPPER_VERSION="v2.1.8"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -61,7 +62,7 @@ TIMESTAMP_START=$(date  +"%s")
 
 TIMEOUT="120"
 
-PREREQUISITES=(date echo)
+PREREQUISITES=(date echo tar)
 PREREQUISITES_REDHAT=(yum)
 PREREQUISITES_DEBIAN=(dpkg apt-get)
 
@@ -337,7 +338,7 @@ util_install_gem() {
 util_create_backup() {
   BACKUP_DIR="${1}"
   BACKUP_FILE="${2}"
-  MANIFEST_NAME="create tar archive of ${BACKUP_DIR}"
+  MANIFEST_NAME="create archive and backup of ${BACKUP_DIR}"
   MANIFEST_NAME_CLEAN="${MANIFEST_NAME// /-}"
   MANIFEST_NAME_CLEAN="${MANIFEST_NAME_CLEAN//\//-}"
   MANIFEST_FILE="${BOOTSTRAPPER_HOME}/${MANIFEST_NAME_CLEAN}.pp"
@@ -349,17 +350,12 @@ util_create_backup() {
     # write manifest to file
     cat << MANIFEST > "${MANIFEST_FILE}"
     # create archive, see http://dcmnt.me/1GabGoi for more information
-    exec { '${MANIFEST_NAME}':
-      command   => 'tar ${ARGS_TAR} ${BACKUP_DIR} > ${BACKUP_FILE}',
-      creates   => '${BACKUP_FILE}',
-      logoutput => 'on_failure',
-
-      # only run this if PUPPET_ETC_PATH is a directory
-      onlyif    => ['test -d ${PUPPET_ETC_PATH}'],
-
-      # without "path", the command fails; usually, you'll need the values below
-      # should your OS, however, need more, provide us with feedback via ${PROJECT_BUGTRACKER}
-      path      => '/bin:/usr/bin'
+    file { '${MANIFEST_NAME}':
+      path   => '${BACKUP_DIR}',
+      ensure => 'absent',
+      backup => '${BACKUP_FILE}',
+      force  => true
+      purge  => true
     }
 MANIFEST
 
@@ -492,10 +488,11 @@ show_help() {
   echo -e "    --skip-out \e[2m..........................\e[00m suppress (most) output to STDOUT"
   # echo -e "    --skip-err \e[2m..........................\e[00m suppress (most) output to STDERR"
   echo -e "    --skip-log \e[2m..........................\e[00m suppress writing output (STDOUT, STDERR) to file"
-  echo -e "    --skip-lock \e[2m..........................\e[00m skip initial check for Bootstrapper lockfile"
-  echo -e "    --skip-test \e[2m..........................\e[00m skip initial test run for Puppet Agent"
+  echo -e "    --skip-lock \e[2m.........................\e[00m skip initial check for Bootstrapper lockfile"
+  echo -e "    --skip-test \e[2m.........................\e[00m skip initial test run for Puppet Agent"
+  echo -e "    --skip-backup \e[2m........................\e[00m skip creation of backup of \"/etc/puppet\""
   echo " "
-  echo -e "    --show-agent-log \e[2m.........................\e[00m shows log for test run of Puppet Agent"
+  echo -e "    --show-agent-log \e[2m....................\e[00m shows log for test run of Puppet Agent"
   echo " "
   echo -e "    --with-deepmerge \e[2m....................\e[00m installs \"deep_merge\" Gem"
   echo -e "    --with-librarian \e[2m....................\e[00m installs \"puppet-librarian\" Gem"
@@ -505,7 +502,7 @@ show_help() {
   echo -e "    --with-git \e[2m..........................\e[00m installs \"git\" package"
   echo " "
   echo -e "    --fetch-repo=\"puppet.git\"\e[2m............\e[00m defines repository to fetch into \"/etc/puppet\""
-  echo -e "    --timeout=\"120\" \e[2m.........................\e[00m defines timeout for test run of Puppet Agent"
+  echo -e "    --timeout=\"120\" \e[2m.....................\e[00m defines timeout for test run of Puppet Agent"
   echo " "
   echo -e "    --quiet, -q \e[2m.........................\e[00m alias for \"--skip-out\" and \"--skip-log\""
   echo " "
