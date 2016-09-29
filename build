@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.2.1
+ #   structed.io - Puppet Bootstrapper v2.2.2
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -51,7 +51,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.2.1"
+BOOTSTRAPPER_VERSION="v2.2.2"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -338,7 +338,7 @@ util_install_gem() {
 util_create_backup() {
   BACKUP_DIR="${1}"
   BACKUP_FILE="${2}"
-  MANIFEST_NAME="create archive and backup of ${BACKUP_DIR}"
+  MANIFEST_NAME="create tar archive of ${BACKUP_DIR}"
   MANIFEST_NAME_CLEAN="${MANIFEST_NAME// /-}"
   MANIFEST_NAME_CLEAN="${MANIFEST_NAME_CLEAN//\//-}"
   MANIFEST_FILE="${BOOTSTRAPPER_HOME}/${MANIFEST_NAME_CLEAN}.pp"
@@ -350,12 +350,17 @@ util_create_backup() {
     # write manifest to file
     cat << MANIFEST > "${MANIFEST_FILE}"
     # create archive, see http://dcmnt.me/1GabGoi for more information
-    file { '${MANIFEST_NAME}':
-      path   => '${BACKUP_DIR}',
-      ensure => 'absent',
-      backup => '${BACKUP_FILE}',
-      force  => true
-      purge  => true
+    exec { '${MANIFEST_NAME}':
+      command   => 'tar ${ARGS_TAR} ${BACKUP_DIR} > ${BACKUP_FILE}',
+      creates   => '${BACKUP_FILE}',
+      logoutput => 'on_failure',
+
+      # only run this if PUPPET_ETC_PATH is a directory
+      onlyif    => ['test -d ${PUPPET_ETC_PATH}'],
+
+      # without "path", the command fails; usually, you'll need the values below
+      # should your OS, however, need more, provide us with feedback via ${PROJECT_BUGTRACKER}
+      path      => '/bin:/usr/bin'
     }
 MANIFEST
 
@@ -706,6 +711,11 @@ parse_options() {
           skip-lock)
             log_stdout "Setting option: \"skip-lock\""
             OPTS_SKIP_LOCK="true"
+          ;;
+
+          skip-backup)
+            log_stdout "Setting option: \"skip-backup\""
+            OPTS_SKIP_BACKUP="true"
           ;;
 
           show-agent-log)
@@ -1530,17 +1540,22 @@ fetch_git_repo() {
         then
         log_stderr "Git credentials considered invalid; skipping Git operations"
       else
-        # create archive of Puppet config directory
-        util_create_backup \
-          "${PUPPET_ETC_PATH}" \
-          "${PUPPET_ETC_BACKUP}"
-
-        FGA_EXITCODE="${?}"
-
-        if [ "${FGA_EXITCODE}" -ne "0" ]
+        if [ "${OPTS_SKIP_BACKUP}" == "false" ]
           then
-          log_stderr "Unable to create backup of ${PUPPET_ETC_PATH}, aborting" 1
-        else
+          # create archive of Puppet config directory
+          util_create_backup \
+            "${PUPPET_ETC_PATH}" \
+            "${PUPPET_ETC_BACKUP}"
+
+          FGA_EXITCODE="${?}"
+
+          if [ "${FGA_EXITCODE}" -ne "0" ]
+            then
+            log_stderr "Unable to create backup of ${PUPPET_ETC_PATH}, aborting" 1
+          else
+            log_stdout "Successfully created backup of \"${PUPPET_ETC_PATH}\""
+          fi
+
           # remove PUPPET_ETC_PATH
           # TODO: make this cleaner
           rm -rf "${PUPPET_ETC_PATH}"
@@ -1557,6 +1572,8 @@ fetch_git_repo() {
             else
               log_stdout "Successfully created git clone of ${PUPPET_GIT_REPO} in ${PUPPET_ETC_PATH}"
             fi
+        else
+          log_stdout "Skipping backup of \"${PUPPET_ETC_PATH}\""
         fi
       fi
     fi
