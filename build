@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.2.0
+ #   structed.io - Puppet Bootstrapper v2.2.1
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -51,7 +51,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.2.0"
+BOOTSTRAPPER_VERSION="v2.2.1"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -520,7 +520,7 @@ show_help() {
   echo -e "    - \"timeout\" expects a number like \"30\", the default is ${TIMEOUT} seconds."
   echo " "
   echo " "
-  echo -e "  \e[EXAMPLES:\e[00m"
+  echo -e "  \e[1mEXAMPLES:\e[00m"
   echo -e "    - Creating a Puppet Agent:"
   echo -e "      bash ${0}"
   echo " "
