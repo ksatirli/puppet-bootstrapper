@@ -1,4 +1,4 @@
-![Docker](https://cultivatedops-static.s3.amazonaws.com/puppet-bootstrapper/logo-50.png)
+![Puppet Bootstrapper](https://cultivatedops-static.s3.amazonaws.com/projects/puppet-bootstrapper/logo-50.png)
 
 > Deploy and configure Puppet on your server with a single line of code.
 
