@@ -4,6 +4,14 @@
 
 ---
 
+# This project is no longer maintained!
+
+The _Puppet Bootstrapper_ is no longer actively maintained and is only made available here for reference. The project itself is still capable of installing a Puppet `3.x` setup on `yum`-based systems and has rudimentary support for Debian and Ubuntu.
+
+What follows is the original `README.md`:
+
+---
+
 ## Start with the latest version of Puppet.
 
 Ignite your deployment by starting out with the latest and greatest version of Puppet, Hiera and all the other tools you have come to love. No more fighting your way through multiple packages, GPG keys and architectures but a simple, all-in-one solution for your deployment.
