@@ -80,10 +80,9 @@ BINARY_GIT="git"
 # -c = --create
 # -z = --gzip
 # -p = --preserve-permissions
-# -s = --preserve-order
 # -P = --absolute-names
 # see http://dcmnt.me/1yJYXZC for more information
-ARGS_TAR="-czpsP --recursion"
+ARGS_TAR="-czpP --recursion"
 
 # this is akin to using git clone puppet.git && git submodule init && git submodule update
 ARGS_GIT="--recursive"
@@ -109,7 +108,7 @@ PROJECT_HOME="https://con.structed.io/"
 PROJECT_BUGTRACKER="http://dcmnt.me/1OQiIU0"
 
 PUPPET_ETC_PATH="/etc/puppet"
-PUPPET_ETC_BACKUP="${BOOTSTRAPPER_HOME}/etc-puppet.backup-$(date  +"%${TIMESTAMP_FORMAT_REPO}").tar.gz"
+PUPPET_ETC_BACKUP="${BOOTSTRAPPER_HOME}/etc-puppet.backup-$(date  +"${TIMESTAMP_FORMAT_REPO}").tar.gz"
 PUPPET_AGENT_LOG="puppet-agent.log"
 ###
  # end: configuration
