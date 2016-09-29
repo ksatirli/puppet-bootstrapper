@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.1.0
+ #   structed.io - Puppet Bootstrapper v2.1.2
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -43,7 +43,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.1.0"
+BOOTSTRAPPER_VERSION="v2.1.2"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -309,6 +309,8 @@ util_install_gem() {
       > "${SILENCE_OUT}" 2>&1
 
     UIG_EXITCODE="${?}"
+
+    echo "UIG_EXITCODE: ${UIG_EXITCODE}"
 
     if [ "${UIG_EXITCODE}" -ne "0" ]
     then
@@ -1324,7 +1326,7 @@ install_deepmerge() {
     then
     log_stdout "Attempting to install \"deep_merge\" Gem"
 
-    install_gem \
+    util_install_gem \
       "deep_merge" \
       > "${SILENCE_OUT}" 2>&1
 
