@@ -40,6 +40,7 @@ OPTS_SKIP_LOG="false"
 OPTS_SKIP_TEST="false"
 OPTS_SKIP_LOCK="false"
 OPTS_SKIP_BACKUP="false"
+OPTS_WITH_PUPPETDB="false"
 OPTS_WITH_DEEPMERGE="false"
 OPTS_WITH_LIBRARIAN="false"
 OPTS_WITH_R10K="false"
@@ -442,12 +443,13 @@ show_help() {
   echo " "
   echo -e "    --show-agent-log \e[2m....................\e[00m shows log for test run of Puppet Agent"
   echo " "
-  echo -e "    --with-deepmerge \e[2m....................\e[00m installs \"deep_merge\" Gem"
-  echo -e "    --with-librarian \e[2m....................\e[00m installs \"puppet-librarian\" Gem"
-  echo -e "    --with-r10k \e[2m.........................\e[00m installs \"r10k\" Gem"
-  echo -e "    --with-eyaml \e[2m........................\e[00m installs \"hiera-eyaml\" Gem"
-  echo -e "    --with-lint \e[2m.........................\e[00m installs \"puppet-lint\" Gem"
-  echo -e "    --with-git \e[2m..........................\e[00m installs \"git\" package"
+  echo -e "    --with-puppetdb\e[2m.....................\e[00m install PuppetDB package"
+  echo -e "    --with-deepmerge\e[2m.....................\e[00m install \"deep_merge\" Gem"
+  echo -e "    --with-librarian\e[2m.....................\e[00m install \"puppet-librarian\" Gem"
+  echo -e "    --with-r10k \e[2m.........................\e[00m install \"r10k\" Gem"
+  echo -e "    --with-eyaml \e[2m........................\e[00m install \"hiera-eyaml\" Gem"
+  echo -e "    --with-lint \e[2m.........................\e[00m install \"puppet-lint\" Gem"
+  echo -e "    --with-git \e[2m..........................\e[00m install \"git\" package"
   echo " "
   echo -e "    --fetch-repo=\"puppet.git\"\e[2m............\e[00m defines repository to fetch into \"/etc/puppet\""
   echo -e "    --timeout=\"120\" \e[2m.....................\e[00m defines timeout for test run of Puppet Agent"
@@ -664,6 +666,11 @@ parse_options() {
           show-agent-log)
             log_stdout "Setting option: \"show-agent-log\""
             OPTS_SHOW_AGENT_LOG="true"
+          ;;
+
+          with-puppetdb)
+            log_stdout "Setting option: \"with-puppetdb\""
+            OPTS_WITH_PUPPETDB="true"
           ;;
 
           with-deepmerge)
@@ -1288,6 +1295,35 @@ install_puppet_package() {
 ###
  # conditionally install deep_merge Gem
  #
+ # @method install_puppetdb
+###
+install_puppetdb() {
+  if [ "${OPTS_WITH_PUPPETDB}" == "true" ]
+    then
+    log_stdout "Attempting to install PuppetDB package"
+
+    puppet \
+      resource \
+      package puppetdb \
+      ensure=latest \
+      > "${SILENCE_OUT}" 2>&1
+
+      IPD_EXITCODE="${?}"
+
+      if [ "${IPD_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to install PuppetDB package"
+      else
+        log_stdout "Successfully installed PuppetDB package"
+      fi
+  fi
+}
+### end: install_puppetdb
+
+
+###
+ # conditionally install deep_merge Gem
+ #
  # @method install_deepmerge
 ###
 install_deepmerge() {
@@ -1598,48 +1634,54 @@ calculate_statistics() {
 ### end: calculate_statistics
 
 
-### let's hit the road!
-show_header
+### let's hit the road unless BOOTSTRAPPER_AS_LIB is set
+if [ "${BOOTSTRAPPER_AS_LIB}" == "true" ]
+  then
+  echo "${BOOTSTRAPPER_NAME_FULL} functions are now loaded."
+else
+  show_header
 
-check_shell
+  check_shell
 
-create_workspace
+  create_workspace
 
-# parse_options needs to receive the full array
-parse_options "${@}"
+  # parse_options needs to receive the full array
+  parse_options "${@}"
 
-check_privileges
+  check_privileges
 
-create_lockfile
+  create_lockfile
 
-determine_os
+  determine_os
 
-check_prerequisites
+  check_prerequisites
 
-determine_fetcher
+  determine_fetcher
 
-fetch_package_repo
+  fetch_package_repo
 
-remove_puppet_package
+  remove_puppet_package
 
-install_package_repo
+  install_package_repo
 
-install_puppet_package
+  install_puppet_package
 
-install_deepmerge
+  install_deepmerge
 
-install_librarian
+  install_librarian
 
-install_r10k
+  install_r10k
 
-install_eyaml
+  install_eyaml
 
-install_lint
+  install_lint
 
-install_git
+  install_git
 
-fetch_git_repo
+  fetch_git_repo
 
-run_agent
+  run_agent
 
-calculate_statistics
+  calculate_statistics
+fi
+###
