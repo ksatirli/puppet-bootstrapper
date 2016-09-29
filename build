@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.1.6
+ #   structed.io - Puppet Bootstrapper v2.1.7
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -50,7 +50,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.1.6"
+BOOTSTRAPPER_VERSION="v2.1.7"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -860,7 +860,10 @@ create_workspace() {
 
     # attempt to (safely) create workspace directory;
     # if successful, this will exit with code zero
-    mkdir -p "${BOOTSTRAPPER_HOME}" > "${SILENCE_OUT}" 2>&1
+    mkdir \
+      -p "${BOOTSTRAPPER_HOME}" \
+      > "${SILENCE_OUT}" 2>&1
+
     CW_EXITCODE="${?}"
 
     if [ "${CW_EXITCODE}" -ne "0" ]
@@ -1630,12 +1633,12 @@ show_header
 
 check_shell
 
+create_workspace
+
 # parse_options needs to receive the full array
 parse_options "${@}"
 
 check_privileges
-
-create_workspace
 
 create_lockfile
 
