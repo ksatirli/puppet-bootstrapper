@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.0.0
+ #   structed.io - Puppet Bootstrapper v2.1.0
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -16,13 +16,17 @@
  #
 ###
 
+
 ###
  # configuration
 ###
 SILENCE_OUT="/dev/null"
+AGENT_LOG="${SILENCE_OUT}"
 
 # default values for command-line arguments
 OPTIONS_SHORT=":q:h:v-:"
+OPTIONS_LONG_FETCH="fetch-repo"
+OPTIONS_LONG_TIMEOUT="timeout"
 OPTS_SKIP_OUT="false"
 # OPTS_SKIP_ERR="false"
 OPTS_SKIP_LOG="false"
@@ -34,11 +38,12 @@ OPTS_WITH_R10K="false"
 OPTS_WITH_EYAML="false"
 OPTS_WITH_LINT="false"
 OPTS_WITH_GIT="false"
+OPTS_SHOW_AGENT_LOG="false"
 
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.0.0"
+BOOTSTRAPPER_VERSION="v2.1.0"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -46,6 +51,8 @@ TIMESTAMP_FORMAT="%Y-%m-%d %H:%M:%S"
 TIMESTAMP_FORMAT_SHORT="%Y-%m-%d at %H:%M"
 TIMESTAMP_FORMAT_REPO="%Y-%m-%d_%H-%M"
 TIMESTAMP_START=$(date  +"%s")
+
+TIMEOUT="120"
 
 PREREQUISITES=(date echo)
 PREREQUISITES_REDHAT=(yum)
@@ -96,9 +103,11 @@ PROJECT_BUGTRACKER="http://dcmnt.me/1OQiIU0"
 
 PUPPET_ETC_PATH="/etc/puppet"
 PUPPET_ETC_BACKUP="${BOOTSTRAPPER_HOME}/etc-puppet.backup.tar.gz"
+PUPPET_AGENT_LOG="puppet-agent.log"
+###
+ # end: configuration
+###
 
-# TODO: make this a user option
-PUPPET_GIT_REPO="git@bitbucket.org:structedio/puppet.git"
 
 ###
  # utility function to print formatted version of string to STDERR
@@ -109,17 +118,41 @@ PUPPET_GIT_REPO="git@bitbucket.org:structedio/puppet.git"
 ###
 util_log_stderr() {
   # print message to STDERR
-  # >&2 echo "#####"
   >&2 echo -e "\e[0;31m${1}\e[00m"
-  # >&2 echo "#####"
 
   # conditionally exit with exit code
-  if [ "${2}" == "1" ]
+  if [ -z "${2}" ] && [ "${2}" == "1" ]
     then
     exit 1
   fi
 }
 ### end: util_log_stderr
+
+
+###
+ # utility function to show dashed line
+ #
+ # @method util_print_dashed_line
+ # @param $1 sets position to print empty line in
+###
+util_print_dashed_line() {
+  POSITION="${1}"
+
+  # print empty line before dashed line
+  if [ "${POSITION}" == "PRE" ] || [ "${POSITION}" == "BOTH" ]
+  then
+    echo " "
+  fi
+
+  echo "----------------------------------------"
+
+  # print empty line after dashed line
+  if [ "${POSITION}" == "POST" ] || [ "${POSITION}" == "BOTH" ]
+  then
+    echo " "
+  fi
+}
+### end: util_print_dashed_line
 
 
 ###
@@ -159,6 +192,7 @@ util_write_log() {
  # utility function to create a workspace
  #
  # @method util_safely_touch_file
+ # @param $1 string contains the file to create
 ###
 util_safely_touch_file() {
   # check if workspace directory exists
@@ -198,7 +232,7 @@ util_check_application_availability() {
   else
     for APPLICATION in "${APPLICATIONS[@]}"
     do
-      log_stdout "Checking availability of \"${APPLICATION}\""
+      log_stdout "Checking availability of \"${APPLICATION}\" binary"
       # inspired by http://dcmnt.me/1cCCCDo
       type \
         "${APPLICATION}" \
@@ -218,9 +252,45 @@ util_check_application_availability() {
 
 
 ###
+ # check if Git credentials are correct
+ #
+ # @method util_check_git_credentials
+ # @param $1 contains the repository URL to test
+###
+util_check_git_credentials() {
+  TEST_GIT_URL="${1}"
+
+  if [ -z "${TEST_GIT_URL}" ]
+    then
+    log_stderr "TEST_GIT_URL variable is empty, aborting" 1
+  else
+    log_stdout "Checking validity of Git credentials"
+    # inspired by http://dcmnt.me/1cCCCDo
+    git \
+      ls-remote \
+      ${TEST_GIT_URL} \
+      > "${SILENCE_OUT}" 2>&1
+
+    CGC_EXITCODE="${?}"
+
+    if [ "${CGC_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Git credentials appear to be invalid."
+      GIT_CREDENTIALS_VALID="false"
+    else
+      log_stdout "Git credentials appear to be valid."
+      GIT_CREDENTIALS_VALID="true"
+    fi
+  fi
+}
+### end: util_check_git_credentials
+
+
+###
  # install Ruby Gem
  #
  # @method util_install_gem
+ # @param $1 string contains the gem to install
 ###
 util_install_gem() {
   GEM_NAME="${1}"
@@ -268,7 +338,7 @@ util_create_backup() {
 
   if [ -z "${BACKUP_DIR}" ] || [ -z "${BACKUP_FILE}" ]
     then
-    echo "BACKUP_DIR or BACKUP_FILE variables are empty, aborting" 1
+    log_stderr "BACKUP_DIR or BACKUP_FILE variables are empty, aborting" 1
   else
     # write manifest to file
     cat << MANIFEST > "${MANIFEST_FILE}"
@@ -328,7 +398,7 @@ util_create_gitclone() {
 
   if [ -z "${GIT_REPO}" ] || [ -z "${GIT_DIR}" ]
     then
-    echo "GIT_REPO or GIT_DIR variables are empty, aborting" 1
+    log_stderr "GIT_REPO or GIT_DIR variables are empty, aborting" 1
   else
     # write manifest to file
     cat << MANIFEST > "${MANIFEST_FILE}"
@@ -350,7 +420,7 @@ MANIFEST
       then
       log_stderr "Unable to write manifest to ${MANIFEST_FILE}, aborting" 1
     else
-      echo \
+      puppet \
         apply \
         "${MANIFEST_FILE}"
 
@@ -374,8 +444,6 @@ MANIFEST
  # @method show_version
 ###
 show_version() {
-  # echo "${BOOTSTRAPPER_NAME_FULL}"
-
   # bail out!
   exit 0
 }
@@ -407,7 +475,6 @@ show_help() {
 
   show_header
 
-  echo " "
   echo -e "  \e[1mUSAGE:\e[00m"
   echo -e "    bash ${0} \e[2m[options]\e[00m"
   echo " "
@@ -419,8 +486,10 @@ show_help() {
   echo -e "    --skip-out \e[2m..........................\e[00m suppress (most) output to STDOUT"
   # echo -e "    --skip-err \e[2m..........................\e[00m suppress (most) output to STDERR"
   echo -e "    --skip-log \e[2m..........................\e[00m suppress writing output (STDOUT, STDERR) to file"
-  echo -e "    --skip-test \e[2m..........................\e[00m skip initial test run for Puppet Agent"
   echo -e "    --skip-lock \e[2m..........................\e[00m skip initial check for Bootstrapper lockfile"
+  echo -e "    --skip-test \e[2m..........................\e[00m skip initial test run for Puppet Agent"
+  echo " "
+  echo -e "    --show-agent-log \e[2m.........................\e[00m shows log for test run of Puppet Agent"
   echo " "
   echo -e "    --with-deepmerge \e[2m....................\e[00m installs \"deep_merge\" Gem"
   echo -e "    --with-librarian \e[2m....................\e[00m installs \"puppet-librarian\" Gem"
@@ -430,6 +499,7 @@ show_help() {
   echo -e "    --with-git \e[2m..........................\e[00m installs \"git\" package"
   echo " "
   echo -e "    --fetch-repo=\"puppet.git\"\e[2m............\e[00m defines repository to fetch into \"/etc/puppet\""
+  echo -e "    --timeout=\"120\" \e[2m.........................\e[00m defines timeout for test run of Puppet Agent"
   echo " "
   echo -e "    --quiet, -q \e[2m.........................\e[00m alias for \"--skip-out\" and \"--skip-log\""
   echo " "
@@ -444,6 +514,7 @@ show_help() {
   echo -e "  \e[1mNOTES:\e[00m"
   echo -e "    - Always run the Bootstrapper via \"bash\" as a number of builtins are not available via Sh"
   echo -e "    - \"fetch-repo\" expects a Git URL like: \"git@bitbucket.org:structedio/puppet.git\""
+  echo -e "    - \"timeout\" expects a number like \"30\", the default is ${TIMEOUT} seconds."
   echo " "
   echo " "
   echo -e "  Additional documentation can be found in the README or via \e[4m${PROJECT_HOME}\e[00m."
@@ -461,9 +532,8 @@ show_help() {
  # @method show_instructions_git
 ###
 show_instructions_git() {
-  echo " "
-  echo " "
-  echo "----------------------------------------"
+  util_print_dashed_line "PRE"
+
   log_stdout "${BOOTSTRAPPER_NAME} was unable to find a suitable Git binary."
   echo " "
   log_stdout "You can solve this by following these instructions:"
@@ -473,8 +543,8 @@ show_instructions_git() {
   echo " "
   log_stdout "To make things easier, you can also run the included wrapper like so:"
   log_stdout "bash ${0} --create-git-wrapper"
-  echo "----------------------------------------"
-  echo " "
+
+  util_print_dashed_line "POST"
   echo " "
 }
 ### end: show_instructions_git
@@ -577,6 +647,7 @@ check_privileges() {
  # parse command-line options
  #
  # @method parse_options
+ # @param $1 array contains all arguments passed to the script
 ###
 parse_options() {
   # log_stdout "Attempting to parse options" "NOFILE"
@@ -621,6 +692,11 @@ parse_options() {
           skip-lock)
             log_stdout "Setting option: \"skip-lock\""
             OPTS_SKIP_LOCK="true"
+          ;;
+
+          show-agent-log)
+            log_stdout "Setting option: \"show-agent-log\""
+            OPTS_SHOW_AGENT_LOG="true"
           ;;
 
           with-deepmerge)
@@ -673,7 +749,35 @@ parse_options() {
           ;;
 
           *)
-            log_stderr "Unsupported option: \e[1m\"--${OPTARG}\"\e[00m" "NOFILE" 1
+            # the asterisk acts as a catch-all trigger
+            # for both good and bad longform arguments.
+            #
+            # using parameter expansion, this can be used to
+            # determine the value following the equals-sign
+            #
+            # inspired by http://dcmnt.me/1HUqcml
+            EQUALS_ARG_KEY="${OPTARG%=*}"
+            EQUALS_ARG_VALUE="${OPTARG#*=}"
+
+            # handle "fetch-repo" case
+            if [ "${EQUALS_ARG_KEY}" == "${OPTIONS_LONG_FETCH}" ]
+              then
+              log_stdout "Setting \"PUPPET_GIT_REPO\" to \"${EQUALS_ARG_VALUE}\""
+              PUPPET_GIT_REPO="${EQUALS_ARG_VALUE}"
+            elif [ "${EQUALS_ARG_KEY}" == "${OPTIONS_LONG_TIMEOUT}" ]
+              then
+              # check if input is actually an integer,
+              # inspired by http://dcmnt.me/1Ju4qUJ
+              if [ "${EQUALS_ARG_VALUE}" -eq "${EQUALS_ARG_VALUE}" ]
+                then
+                log_stdout "Setting \"timeout\" value to \"${EQUALS_ARG_VALUE}\""
+                TIMEOUT="${EQUALS_ARG_VALUE}"
+              else
+                log_stdout "\"timeout\" value is not an integer, defaulting to \"${TIMEOUT}\""
+              fi
+            else
+              log_stderr "Unsupported option: \e[1m\"--${OPTARG}\"\e[00m" "NOFILE" 1
+            fi
             ;;
 
         esac;;
@@ -776,7 +880,7 @@ create_lockfile() {
   log_stdout "Attempting to validate lock file"
 
   # check if bootstrapper lock exists
-  if [ -f "${BOOTSTRAPPER_LOCK}" ] &&  [ "${OPTS_SKIP_LOCK}" == "FALSE" ]
+  if [ -f "${BOOTSTRAPPER_LOCK}" ] && [ "${OPTS_SKIP_LOCK}" == "FALSE" ]
     then
       log_stderr "Found pre-existing lock file found at \"${BOOTSTRAPPER_LOCK}\", aborting" 1
   else
@@ -860,6 +964,8 @@ determine_os() {
       # set OS version, too
       HOST_OS_VERSION="${VERSION_ID}"
 
+      log_stdout "Successfully determined operating system as \"${HOST_OS}\""
+
       # arriving here means we are in a supported OS, let's continue on
       # log_stdout "Host OS is: ${HOST_OS}"
       # log_stdout "Host OS version is: ${HOST_OS_VERSION}"
@@ -884,12 +990,13 @@ check_prerequisites() {
   if [ "${HOST_OS}" == "${OS_ID_REDHAT}" ]
     then
     util_check_application_availability "${PREREQUISITES_REDHAT[@]}"
-
   elif [ "${HOST_OS}" == "${OS_ID_DEBIAN}" ]
     then
     util_check_application_availability "${PREREQUISITES_DEBIAN[@]}"
-
   fi
+
+  # arriving here means we passed the prerequisites check
+  log_stdout "Successfully checked prerequisites"
 }
 ### end: check_prerequisites
 
@@ -968,7 +1075,7 @@ fetch_package_repo() {
   fi
 
   # attempt to fetch repository
-  log_stdout "Attempting to fetch repository data"
+  log_stdout "Attempting to fetch repository data from \"${REPO_URL}\""
 
   if [ -z "${REPO_URL}" ]
     then
@@ -1003,6 +1110,8 @@ fetch_package_repo() {
     if [ "${FRC_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to fetch repository data from \"${REPO_URL}\" using \"${FETCHER_UTIL}\", aborting" 1
+    else
+      log_stdout "Successfully fetched repository data from \"${REPO_URL}\" using \"${FETCHER_UTIL}\""
     fi
   fi
 }
@@ -1045,6 +1154,8 @@ install_package_repo() {
       if [ "${IRY_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to complete possibly unfinished transactions, aborting" 1
+      else
+        log_stderr "Successfully completed possibly unfinished transactions"
       fi
     fi
 
@@ -1061,6 +1172,8 @@ install_package_repo() {
     if [ "${IRR_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to install YUM repository from \"${REPO_FILE}\", aborting" 1
+    else
+      log_stderr "Successfully installted YUM repository from \"${REPO_FILE}\""
     fi
 
   # check if host OS is Debian-based
@@ -1089,8 +1202,11 @@ install_package_repo() {
       if [ "${IRA_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to update APT repository, aborting" 1
+      else
+        log_stderr "Successfully updated APT repository"
       fi
-
+    else
+      log_stdout "Successfully installted APT repository from \"${REPO_FILE}\""
     fi
 
   fi
@@ -1374,7 +1490,7 @@ fetch_git_repo() {
     log_stdout "Attempting to fetch git repository"
 
     # check if git binary is available
-    log_stdout "Checking availability of \"${BINARY_GIT}\""
+    log_stdout "Checking availability of \"${BINARY_GIT}\" binary"
     # inspired by http://dcmnt.me/1cCCCDo
     type \
       "${BINARY_GIT}" \
@@ -1390,33 +1506,41 @@ fetch_git_repo() {
 
       exit 1
     else
-      # create archive of Puppet config directory
-      util_create_backup \
-        "${PUPPET_ETC_PATH}" \
-        "${PUPPET_ETC_BACKUP}"
+      # verify validity of credentials
+      util_check_git_credentials "${PUPPET_GIT_REPO}"
 
-      FGA_EXITCODE="${?}"
-
-      if [ "${FGA_EXITCODE}" -ne "0" ]
+      if [ "${GIT_CREDENTIALS_VALID}" == "false" ]
         then
-        log_stderr "Unable to create backup of ${PUPPET_ETC_PATH}, aborting" 1
+        log_stderr "Git credentials considered invalid; skipping Git operations"
       else
-        # remove PUPPET_ETC_PATH
-        # TODO: make this cleaner
-        rm -rf "${PUPPET_ETC_PATH}"
+        # create archive of Puppet config directory
+        util_create_backup \
+          "${PUPPET_ETC_PATH}" \
+          "${PUPPET_ETC_BACKUP}"
 
-        util_create_gitclone \
-          "${PUPPET_GIT_REPO}" \
-          "${PUPPET_ETC_PATH}"
+        FGA_EXITCODE="${?}"
 
-          FGG_EXITCODE="${?}"
+        if [ "${FGA_EXITCODE}" -ne "0" ]
+          then
+          log_stderr "Unable to create backup of ${PUPPET_ETC_PATH}, aborting" 1
+        else
+          # remove PUPPET_ETC_PATH
+          # TODO: make this cleaner
+          rm -rf "${PUPPET_ETC_PATH}"
 
-          if [ "${FGG_EXITCODE}" -ne "0" ]
-            then
-            log_stderr "Unable to create git clone of ${PUPPET_GIT_REPO}, aborting" 1
-          else
-            log_stdout "Successfully created git clone of ${PUPPET_GIT_REPO} in ${PUPPET_ETC_PATH}"
-          fi
+          util_create_gitclone \
+            "${PUPPET_GIT_REPO}" \
+            "${PUPPET_ETC_PATH}"
+
+            FGG_EXITCODE="${?}"
+
+            if [ "${FGG_EXITCODE}" -ne "0" ]
+              then
+              log_stderr "Unable to create git clone of ${PUPPET_GIT_REPO}, aborting" 1
+            else
+              log_stdout "Successfully created git clone of ${PUPPET_GIT_REPO} in ${PUPPET_ETC_PATH}"
+            fi
+        fi
       fi
     fi
   fi
@@ -1436,19 +1560,40 @@ run_agent() {
 
     if [ "${OPTS_SKIP_TEST}" == "false" ]
       then
-      log_stdout "Attempting to run Puppet Agent in test mode"
+      log_stdout "Attempting to run Puppet Agent in test mode with timeout of ${TIMEOUT} secs"
 
+      # enable this if you want to show puppet agent run logging
+      # then remove the "> "${SILENCE_OUT}" 2>&1" as well as the
+      # trailing slash after the "${TIMEOUT}" bit a line up
+
+      # conditionally show dashed line
+      if [ "${OPTS_SHOW_AGENT_LOG}" == "true" ]
+        then
+        util_print_dashed_line "PRE"
+        AGENT_LOG="${BOOTSTRAPPER_HOME}/${PUPPET_AGENT_LOG}"
+      fi
+
+      # "--test" is an alias for (amongst others): "--no-daemonize" and "--onetime"
       puppet \
         agent \
-        --no-daemonize \
         --test \
-        > "${SILENCE_OUT}" 2>&1
+        --configtimeout="${TIMEOUT}" \
+        > "${AGENT_LOG}" 2>&1
 
       RAP_EXITCODE="${?}"
 
+      # conditionally show dashed line
+      if [ "${OPTS_SHOW_AGENT_LOG}" == "true" ]
+        then
+        cat "${AGENT_LOG}"
+
+        util_print_dashed_line "POST"
+      fi
+
+      # TODO: check for error-code to see if a timeout or something else occurred
       if [ "${RAP_EXITCODE}" -ne "0" ]
         then
-        log_stderr "Unable to run Puppet Agent, aborting" 1
+        log_stderr "Unable to complete initial Puppet Agent before timing out" 0
       else
         log_stdout "Successfully ran Puppet Agent"
       fi
