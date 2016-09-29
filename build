@@ -59,7 +59,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/last-run.lock"
-BOOTSTRAPPER_VERSION="v2.5.0"
+BOOTSTRAPPER_VERSION="v2.6.0"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -122,8 +122,8 @@ PACKAGE_REMOVALS=(augeas* hiera* puppet*)
 # PACKAGE_PUPPETMASTER_PC="puppetserver"
 PACKAGE_COLLECTION_PREFIX="pc"
 
-PROJECT_HOME="https://con.structed.io/"
-PROJECT_BUGTRACKER="http://dcmnt.me/1OQiIU0"
+PROJECT_HOME="https://cultivatedops.io/puppet-bootstrapper"
+PROJECT_BUGTRACKER="https://jira.cultivatedops.com/"
 
 PUPPET_ETC_PATH="/etc/puppet"
 # PUPPET_ETC_PATH_PC="/etc/puppetlabs"
@@ -407,7 +407,7 @@ show_header() {
   clear
 
   echo " "
-  echo -e "\e[1mstructed.io ${BOOTSTRAPPER_NAME_FULL}\e[00m"
+  echo -e "\e[1mCultivated Ops ${BOOTSTRAPPER_NAME_FULL}\e[00m"
   echo " "
 }
 ### end: show_header
@@ -466,7 +466,7 @@ show_help() {
   echo " "
   echo -e "  \e[1mNOTES:\e[00m"
   echo -e "    - Always run the Bootstrapper via \"bash\" as a number of builtins are not available via \"Sh\""
-  echo -e "    - \"${OPTIONS_LONG_FETCH}\" expects a Git URL like: \"git@bitbucket.org:structedio/puppet.git\""
+  echo -e "    - \"${OPTIONS_LONG_FETCH}\" expects a Git URL like: \"git@bitbucket.org:yourorg/puppet.git\""
   echo -e "    - \"${OPTIONS_LONG_TIMEOUT}\" expects a number like \"30\", the default is \"${TIMEOUT}\" seconds."
   echo -e "    - \"${OPTIONS_LONG_COLLECTION}\" expects a number like \"1\""
   echo " "

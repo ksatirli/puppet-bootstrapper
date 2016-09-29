@@ -55,7 +55,7 @@ Deploy without having to log in to your server by specifying the `BOOTSTRAP_REPO
 All information will be logged to the `puppet-bootstrapper.log` file.
 
 ```
-export BOOTSTRAP_REPO="https://user:pass@structed.io/puppet.git"; sh -c "$(curl -s https://bitbucket.org/cultivatedops/puppet-bootstrapper/raw/HEAD/build)"
+export BOOTSTRAP_REPO="https://user:pass@bitbucket.org/yourorg/puppet.git"; sh -c "$(curl -s https://bitbucket.org/cultivatedops/puppet-bootstrapper/raw/HEAD/build)"
 ```
 
 ### Maintainers
