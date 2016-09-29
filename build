@@ -310,8 +310,6 @@ util_install_gem() {
 
     UIG_EXITCODE="${?}"
 
-    echo "UIG_EXITCODE: ${UIG_EXITCODE}"
-
     if [ "${UIG_EXITCODE}" -ne "0" ]
     then
       log_stderr "Unable to install ${GEM_NAME} Gem"
