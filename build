@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.1.4
+ #   structed.io - Puppet Bootstrapper v2.1.5
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -50,7 +50,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.1.4"
+BOOTSTRAPPER_VERSION="v2.1.5"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -1492,9 +1492,9 @@ install_git() {
 ###
 fetch_git_repo() {
   # only run this if PUPPET_GIT_REPO is set
-  if [ -z "${PUPPET_GIT_REPO}" ]
+  if [ "${PUPPET_GIT_REPO}" != "" ]
     then
-    log_stdout "Attempting to fetch git repository"
+    log_stdout "Attempting to fetch git repository: \"${PUPPET_GIT_REPO}\""
 
     # check if git binary is available
     log_stdout "Checking availability of \"${BINARY_GIT}\" binary"
