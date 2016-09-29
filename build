@@ -1,329 +1,1487 @@
-#!/bin/bash -e
+#!/usr/bin/env bash
 
 ###
-  #           __                      __             __    _
-  #    _____ / /_ _____ __  __ _____ / /_ ___   ____/ /   (_)____
-  #   / ___// __// ___// / / // ___// __// _ \ / __  /   / // __ \
-  #  (__  )/ /_ / /   / /_/ // /__ / /_ /  __// /_/ /_  / // /_/ /
-  # /____/ \__//_/    \__,_/ \___/ \__/ \___/ \__,_/(_)/_/ \____/
-  #
-  # structed.io - masterless Puppet bootstraper
-  # bootstraps new instances for nodeless Puppet
-  #
-  # normal installation: bash -c "$(curl -s http://con.structed.io/build)"
-  # verbose installation: bash -c "$(curl http://con.structed.io/build)" -- -v
-  #
-  #
-  # TODO:
-  # - build in more exit-code checking
-  # - verify debian support
-  # - option to allow for changing puppet version
-  #
-  ##
+ #          _                           _                _         _
+ #    ___  | |_   _ __   _   _    ___  | |_    ___    __| |       (_)   ___
+ #   / __| | __| | '__| | | | |  / __| | __|  / _ \  / _` |       | |  / _ \
+ #   \__ \ | |_  | |    | |_| | | (__  | |_  |  __/ | (_| |   _   | | | (_) |
+ #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
+ #
+ #
+ #   structed.io - Puppet Bootstrapper v2.0.0
+ #   bootstraps instances as Puppet Client or Master
+ #
+ #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
+ #   quiet installation: bash -c "$(curl https://con.structed.io/build)" -- --quiet
+ #
+###
 
-### base config
-TIMESTAMP=$(date -R)
-PUPPET_DIR="${HOME}/.puppet"
-PUPPET_LOCK="${PUPPET_DIR}/puppet-bootstrap.lock"
-PUPPET_HOME="/etc/puppet"
-FILE_PUPPET_APPLY="${PUPPET_DIR}/puppet-apply.sh"
-FILE_PUPPET_RUN="${PUPPET_DIR}/puppet-run.sh"
-FILE_PUPPET_UPDATE="${PUPPET_DIR}/puppet-update.sh"
-FILE_CRONTAB="${PUPPET_DIR}/puppet-crontab.txt"
-FILE_LOG="${PUPPET_DIR}/puppet-bootstrapper.log"
-ARGS_CURL="-s"
-ARGS_YUM="--assumeyes --quiet"
+###
+ # configuration
+###
+SILENCE_OUT="/dev/null"
 
-### ad-hoc config
-while getopts "v" OPTION
-do
-  case ${OPTION} in
-    v)
-      ARGS_CURL="--verbose"
+# default values for command-line arguments
+OPTIONS_SHORT=":q:h-:"
+OPTS_SKIP_OUT="false"
+# OPTS_SKIP_ERR="false"
+OPTS_SKIP_LOG="false"
+OPTS_SKIP_TEST="false"
+OPTS_SKIP_LOCK="false"
+OPTS_WITH_DEEPMERGE="false"
+OPTS_WITH_LIBRARIAN="false"
+OPTS_WITH_R10K="false"
+OPTS_WITH_EYAML="false"
+OPTS_WITH_LINT="false"
+OPTS_WITH_GIT="false"
 
-      ### required for RHEL, CentOS, Amazon Linux
-      ARGS_YUM="--assumeyes"
+BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
+BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
+BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
+BOOTSTRAPPER_VERSION="v2.0.0"
+BOOTSTRAPPER_NAME="Puppet Bootstrapper"
+BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
-      ### required for Ubuntu / Debian
-      ARGS_APT="-y"
-      ARGS_DPKG=""
-        ;;
-  esac
-done
-### end ad-hoc config
+TIMESTAMP_FORMAT="%Y-%m-%d %H:%M:%S"
+TIMESTAMP_FORMAT_SHORT="%Y-%m-%d at %H:%M"
+TIMESTAMP_FORMAT_REPO="%Y-%m-%d_%H-%M"
+TIMESTAMP_START=$(date  +"%s")
 
+PREREQUISITES=(date echo)
+PREREQUISITES_REDHAT=(yum)
+PREREQUISITES_DEBIAN=(dpkg apt-get)
 
-### convience function to echo and log with a single call
-echolog()
-{
-  ### check if file exists, is writable and if not: touch it
-  if [[ ! -f "${FILE_LOG}" ]]
-  then
-    touch "${FILE_LOG}"
-  fi
+OS_RELEASE="/etc/os-release"
+OS_RELEASE_RHEL="/etc/redhat-release"
+OS_ID_AMAZON="amzn"
+OS_ID_CENTOS="centos"
+OS_ID_REDHAT="rhel"
+OS_ID_UBUNTU="ubuntu"
+OS_ID_DEBIAN="debian"
 
-  ### check if file is writable, if not, abort
-  if [[ ! -w "${FILE_LOG}" ]]
-  then
-    echo "${1}"
-    echo "[${HOSTNAME}] [$(date +'%Y-%m-%dT%H:%M:%S%z')] ${*}" >> "${FILE_LOG}"
-  else
-    echo "#####"
-    echo -e "# You do not have write permissions for \e[0;31m${FILE_LOG}\e[00m, aborting."
-    echo "#####"
+BINARY_CURL="curl"
+BINARY_WGET="wget"
+BINARY_GIT="git"
+
+# -c = --create
+# -z = --gzip
+# -p = --preserve-permissions
+# -s = --preserve-order
+# -P = --absolute-names
+# see http://dcmnt.me/1yJYXZC for more information
+ARGS_TAR="-czpsP --recursion"
+
+# this is akin to using git clone puppet.git && git submodule init && git submodule update
+ARGS_GIT="--recursive"
+
+# these URLs are based on information published at http://dcmnt.me/1OQnalP
+# printf is used to replace "%s" with the version (RHEL) or codename (Debian)
+REPO_URL_REDHAT="http://yum.puppetlabs.com/puppetlabs-release-el-%s.noarch.rpm"
+REPO_URL_DEBIAN="https://apt.puppetlabs.com/puppetlabs-release-%s.deb"
+REPO_FILE_NAME="puppetlabs-release"
+REPO_FILE_REDHAT="${BOOTSTRAPPER_HOME}/${REPO_FILE_NAME}-%s.noarch.rpm"
+REPO_FILE_DEBIAN="${BOOTSTRAPPER_HOME}/${REPO_FILE_NAME}-%s.deb"
+
+#REPO_REDHAT_LOG="${BOOTSTRAPPER_HOME}/rpm-$(date +"${TIMESTAMP_FORMAT_REPO}").log"
+REPO_DEBIAN_LOG="${BOOTSTRAPPER_HOME}/dpkg-$(date +"${TIMESTAMP_FORMAT_REPO}").log"
+
+PACKAGE_PUPPET="puppet"
+PACKAGE_PUPPETMASTER="puppetmaster"
+PACKAGE_PUPPETMASTER_PASSENGER="puppetmaster-passenger"
+PACKAGE_NAME="${PACKAGE_PUPPET}"
+PACKAGE_REMOVALS=(augeas* hiera* puppet*)
+
+PROJECT_HOME="https://con.structed.io/"
+PROJECT_BUGTRACKER="http://dcmnt.me/1OQiIU0"
+
+PUPPET_ETC_PATH="/etc/puppet"
+PUPPET_ETC_BACKUP="${BOOTSTRAPPER_HOME}/etc-puppet.backup.tar.gz"
+
+# TODO: make this a user option
+PUPPET_GIT_REPO="git@bitbucket.org:structedio/puppet.git"
+
+###
+ # utility function to print formatted version of string to STDERR
+ #
+ # @method util_log_stderr
+ # @param $1 parameter contains the error to format and print
+ # @param $2 [optional] boolean to exit with error code
+###
+util_log_stderr() {
+  # print message to STDERR
+  # >&2 echo "#####"
+  >&2 echo -e "\e[0;31m${1}\e[00m"
+  # >&2 echo "#####"
+
+  # conditionally exit with exit code
+  if [ "${2}" == "1" ]
+    then
     exit 1
   fi
 }
-
-### check for underlying distribution of OS
-if [[ -f "/etc/redhat-release" ]]
-  then
-    BOOTSTRAP_DIST="redhat"
-    OS_VERSION_MAJ=$(rpm -q --qf '%{VERSION}' "$(rpm -q --whatprovides redhat-release)")
-
-    ### Puppet Labs has Major Version-based YUM packages available at https://yum.puppetlabs.com/
-    PUPPET_REMOTE_URL="https://yum.puppetlabs.com"
-    PUPPET_RPM="puppetlabs-release-el-${OS_VERSION_MAJ}.noarch.rpm"
-    PUPPET_REMOTE_RPM="${PUPPET_REMOTE_URL}/${PUPPET_RPM}"
-
-    ARGS_YUM="--assumeyes --quiet"
-
-elif [[ -f "/etc/debian_version" ]]
-  then
-    ### figure out codename
-    BOOTSTRAP_DIST_CODE=$(lsb_release --codename --short)
-
-    ### Puppet Labs has codename-based DEB packages available at https://apt.puppetlabs.com/
-    PUPPET_REMOTE_URL="https://apt.puppetlabs.com"
-    PUPPET_DEB="puppetlabs-release-${BOOTSTRAP_DIST_CODE}.deb"
-    PUPPET_REMOTE_DEB="${PUPPET_REMOTE_URL}/${PUPPET_RPM}"
-
-    ### define distro
-    BOOTSTRAP_DIST="debian"
-
-    ARGS_APT="-y -qq"
-    ARGS_DPKG="--quiet"
-
-else
-  echo "#####"
-  echo -e "# Need to run this on \e[0;31mRHEL\e[00m, \e[0;31mCentOS\e[00m, \e[0;31mDebian\e[00m or \e[0;31mUbuntu\e[00m. Aborting."
-  echo "#####"
-fi
+### end: util_log_stderr
 
 
-### check if script is being run as root; inspired by http://dcmnt.me/1KaHE3q
-if [[ "${EUID}" -ne 0 ]]
-then
-  echo " "
-  echo "#####"
-  echo -e "# Need to be \e[0;31mroot\e[00m to run the bootstrapper. Aborting."
-  echo "#####"
-  echo " "
-  exit 1
+###
+ # utility function to write log to file system
+ #
+ # @method util_write_log
+ # @param $1 contains the string to write
+###
+util_write_log() {
+  # only write logs if option is set to true
+  if [ "${OPTS_SKIP_LOG}" == "false" ]
+    then
+      # check if LOG_FILE variable is non-empty
+      if [ -z "${BOOTSTRAPPER_LOG}" ]
+        then
+        # print error and exit
+        util_log_stderr "LOG_FILE variable is empty, aborting" "NOFILE" 1
+      else
+        util_safely_touch_file "${BOOTSTRAPPER_LOG}"
 
-else
-  ### continue if script has not been run before
-  if [[ ! -f "${PUPPET_LOCK}" ]]
-  then
-
-    clear
-    echo " "
-    echo "#####"
-    echo "# structed.io masterless Puppet bootstrapper"
-    echo "#####"
-    echo " "
-
-    ### create working directory and switch to it
-    mkdir -p "${PUPPET_DIR}"
-    touch "${FILE_LOG}"
-
-    ### this needs to appear after the mkdir, otherwise write perm check fails
-    echolog "#1 - creating working directory and switching to it"
-
-    cd "${PUPPET_DIR}"
-
-    ### remove any installed versions of Puppet and Puppet Labs release RPM
-    echolog "#2 - removing previously installed versions of Puppet"
-
-    if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
-      then
-        yum "${ARGS_YUM}" remove puppet > "${FILE_LOG}" 2>&1
-        yum "${ARGS_YUM}" remove puppetlabs-release > "${FILE_LOG}" 2>&1
-    elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
-      then
-        apt-get "${ARGS_APT}" remove puppet > "${FILE_LOG}" 2>&1
-        apt-get "${ARGS_APT}" remove puppetlabs-release > "${FILE_LOG}" 2>&1
-    fi
-
-
-    ### install package for Puppet Labs and clean package database
-    echolog "#3 - installing Puppet Labs Release package"
-
-    if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
-      then
-        ### download official RPM from Puppet Labs
-        curl "${ARGS_CURL}" --remote-name "${PUPPET_REMOTE_RPM}" > /dev/null 2>&1
-
-        ### update local repository cache
-        yum "${ARGS_YUM}" install "${PUPPET_DIR}/${PUPPET_RPM}" > "${FILE_LOG}" 2>&1
-
-        ### check if package is present
-        ls -la "${PUPPET_DIR}/${PUPPET_RPM}" > /dev/null 2>&1
-
-        # check exit code
-        if [[ "${?}" -ne 0 ]]
+        # check if BOOTSTRAPPER_LOG file is writeable
+        if [ -w "${BOOTSTRAPPER_LOG}" ]
           then
-            # remove RPM
-            rm -rf "${PUPPET_DIR:?}/${PUPPET_RPM}"
+          # append to BOOTSTRAPPER_LOG file
+          echo "${1}" >> "${BOOTSTRAPPER_LOG}"
+        else
+          # print error and exit
+          util_log_stderr "Unable to append to \"${BOOTSTRAPPER_LOG}\", aborting" 1
         fi
+      fi
+  fi
+}
+### end: util_write_log
 
-    elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
+
+###
+ # utility function to create a workspace
+ #
+ # @method util_safely_touch_file
+###
+util_safely_touch_file() {
+  # check if workspace directory exists
+  if [ ! -f "${1}" ]
+    then
+    log_stdout "Attempting to safely create file \"${1}\"" "NOFILE"
+
+    # attempt to safely touch file
+    touch "${1}" > "${SILENCE_OUT}" 2>&1
+
+    STF_EXITCODE="${?}"
+
+    if [ "${STF_EXITCODE}" -ne "0" ]
       then
-        ### download official DEB from Puppet Labs
-        curl "${ARGS_CURL}" --remote-name "${PUPPET_REMOTE_DEB}"
-
-        ### install Puppet Labs repository
-        dpkg "${ARGS_DPKG}" --install "${PUPPET_DEB}" > "${FILE_LOG}" 2>&1
-
-        ### update local repository cache
-        apt-get "${ARGS_APT}" update > "${FILE_LOG}" 2>&1
-
-        ### check if package is present
-        ls -la "${PUPPET_DIR}/${PUPPET_DEB}" > /dev/null 2>&1
-
-        # check exit code
-        if [[ "${?}" -ne 0 ]]
-          then
-            # remove DEB
-            rm -rf "${PUPPET_DIR:?}/${PUPPET_DEB}"
-        fi
-
+      log_stderr "Unable to safely create file \"${1}\", aborting" 1
     else
-      echolog "Unsupported distribution detected. Aborting"
+      log_stdout "Safely created file \"${1}\""
+    fi
+  fi
+}
+### end: util_safely_touch_file
+
+
+###
+ # check if application is available
+ #
+ # @method util_check_application_availability
+###
+util_check_application_availability() {
+  APPLICATIONS=(${@})
+
+  # only run this check if at least one application was passed
+  if [ ! -n "${APPLICATIONS[0]}" ]
+    then
+    util_log_stderr "APPLICATIONS variable is empty, aborting"
+
+  else
+    for APPLICATION in "${APPLICATIONS[@]}"
+    do
+      log_stdout "Checking availability of \"${APPLICATION}\""
+      # inspired by http://dcmnt.me/1cCCCDo
+      type \
+        "${APPLICATION}" \
+        > "${SILENCE_OUT}" 2>&1
+
+      CPI_EXITCODE="${?}"
+
+      if [ "${CPI_EXITCODE}" -ne "0" ]
+        then
+        log_stdout "Unable to find \"${APPLICATION}\"" "NOFILE" 1
+      fi
+    done
+
+  fi
+}
+### end: util_check_application_availability
+
+
+###
+ # install Ruby Gem
+ #
+ # @method util_install_gem
+###
+util_install_gem() {
+  GEM_NAME="${1}"
+
+  # only run agent when we are on an agent node
+  if [ -z "${GEM_NAME}" ]
+    then
+    util_log_stderr "GEM_NAME variable is empty, aborting"
+
+  else
+    puppet \
+      resource \
+      package "${GEM_NAME}" \
+      provider=gem \
+      ensure=latest \
+      > "${SILENCE_OUT}" 2>&1
+
+    UIG_EXITCODE="${?}"
+
+    if [ "${UIG_EXITCODE}" -ne "0" ]
+    then
+      log_stderr "Unable to install ${GEM_NAME} Gem"
+    else
+      log_stdout "Successfully installed ${GEM_NAME} Gem"
+    fi
+  fi
+}
+### end: util_install_gem
+
+
+###
+ # utility function to create TAR backup using Puppet
+ #
+ # @method util_create_backup
+ # @param $1 directory to backup
+ # @param $2 file to store backup in
+###
+util_create_backup() {
+  BACKUP_DIR="${1}"
+  BACKUP_FILE="${2}"
+  MANIFEST_NAME="create tar archive of ${BACKUP_DIR}"
+  MANIFEST_NAME_CLEAN="${MANIFEST_NAME// /-}"
+  MANIFEST_NAME_CLEAN="${MANIFEST_NAME_CLEAN//\//-}"
+  MANIFEST_FILE="${BOOTSTRAPPER_HOME}/${MANIFEST_NAME_CLEAN}.pp"
+
+  if [ -z "${BACKUP_DIR}" ] || [ -z "${BACKUP_FILE}" ]
+    then
+    echo "BACKUP_DIR or BACKUP_FILE variables are empty, aborting" 1
+  else
+    # write manifest to file
+    cat << MANIFEST > "${MANIFEST_FILE}"
+    # create archive, see http://dcmnt.me/1GabGoi for more information
+    exec { '${MANIFEST_NAME}':
+      command   => 'tar ${ARGS_TAR} ${BACKUP_DIR} > ${BACKUP_FILE}',
+      creates   => '${BACKUP_FILE}',
+      logoutput => 'on_failure',
+
+      # only run this if PUPPET_ETC_PATH is a directory
+      onlyif    => ['test -d ${PUPPET_ETC_PATH}'],
+
+      # without "path", the command fails; usually, you'll need the values below
+      # should your OS, however, need more, provide us with feedback via ${PROJECT_BUGTRACKER}
+      path      => '/bin:/usr/bin'
+    }
+MANIFEST
+
+    CBC_EXITCODE="${?}"
+
+    if [ "${CBC_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to write manifest to ${MANIFEST_FILE}, aborting" 1
+    else
+      puppet \
+        apply \
+        "${MANIFEST_FILE}"
+
+      CBP_EXITCODE="${?}"
+
+      if [ "${CBP_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to complete Puppet run, aborting" 1
+      else
+        log_stdout "Created backup of ${BACKUP_DIR} in ${BACKUP_FILE}"
+      fi
+    fi
+  fi
+}
+### end: util_create_backup
+
+
+###
+# utility function to create Git clone using Puppet
+ #
+ # @method util_create_gitclone
+ # @param $1 repository to clone
+ # @param $2 directory to clone into
+###
+util_create_gitclone() {
+  GIT_REPO="${1}"
+  GIT_DIR="${2}"
+  MANIFEST_NAME="create git clone of ${BACKUP_DIR}"
+  MANIFEST_NAME_CLEAN="${MANIFEST_NAME// /-}"
+  MANIFEST_NAME_CLEAN="${MANIFEST_NAME_CLEAN//\//-}"
+  MANIFEST_FILE="${BOOTSTRAPPER_HOME}/${MANIFEST_NAME_CLEAN}.pp"
+
+  if [ -z "${GIT_REPO}" ] || [ -z "${GIT_DIR}" ]
+    then
+    echo "GIT_REPO or GIT_DIR variables are empty, aborting" 1
+  else
+    # write manifest to file
+    cat << MANIFEST > "${MANIFEST_FILE}"
+    # create archive, see http://dcmnt.me/1GabGoi for more information
+    exec { '${MANIFEST_NAME}':
+      command   => 'git clone ${ARGS_GIT} ${GIT_REPO} ${GIT_DIR}',
+      creates   => '${GIT_DIR}',
+      logoutput => 'on_failure',
+
+      # without "path", the command fails; usually, you'll need the values below
+      # should your OS, however, need more, provide us with feedback via ${PROJECT_BUGTRACKER}
+      path      => '/bin:/usr/bin'
+    }
+MANIFEST
+
+    CBC_EXITCODE="${?}"
+
+    if [ "${CBC_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to write manifest to ${MANIFEST_FILE}, aborting" 1
+    else
+      echo \
+        apply \
+        "${MANIFEST_FILE}"
+
+      CBP_EXITCODE="${?}"
+
+      if [ "${CBP_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to complete Puppet run, aborting" 1
+      else
+        log_stdout "Created git clone of ${GIT_REPO} in ${GIT_DIR}"
+      fi
+    fi
+  fi
+}
+### end: util_create_gitclone
+
+
+###
+ # utility function to show header text
+ #
+ # @method show_header
+###
+show_header() {
+  clear
+
+  echo " "
+  echo -e "\e[1mstructed.io ${BOOTSTRAPPER_NAME_FULL}\e[00m"
+  echo " "
+}
+### end: show_header
+
+
+###
+ # show help text
+ #
+ # @method show_help
+###
+show_help() {
+  # output from this function is NOT logged to the BOOTSTRAPPER_LOG file
+
+  show_header
+
+  echo " "
+  echo -e "  \e[1mUSAGE:\e[00m"
+  echo -e "    bash ${0} \e[2m[options]\e[00m"
+  echo " "
+  echo " "
+  echo -e "  \e[1mOPTIONS:\e[00m"
+  echo -e "    --install-master \e[2m....................\e[00m install Puppet Master in addition to client"
+  echo -e "    --install-master-passenger \e[2m..........\e[00m install Puppet Master with Passenger"
+  echo " "
+  echo -e "    --skip-out \e[2m..........................\e[00m suppress (most) output to STDOUT"
+  # echo -e "    --skip-err \e[2m..........................\e[00m suppress (most) output to STDERR"
+  echo -e "    --skip-log \e[2m..........................\e[00m suppress writing output (STDOUT, STDERR) to file"
+  echo -e "    --skip-test \e[2m..........................\e[00m skip initial test run for Puppet Agent"
+  echo -e "    --skip-lock \e[2m..........................\e[00m skip initial check for Bootstrapper lockfile"
+  echo " "
+  echo -e "    --with-deepmerge \e[2m....................\e[00m installs \"deep_merge\" Gem"
+  echo -e "    --with-librarian \e[2m....................\e[00m installs \"puppet-librarian\" Gem"
+  echo -e "    --with-r10k \e[2m.........................\e[00m installs \"r10k\" Gem"
+  echo -e "    --with-eyaml \e[2m........................\e[00m installs \"hiera-eyaml\" Gem"
+  echo -e "    --with-lint \e[2m.........................\e[00m installs \"puppet-lint\" Gem"
+  echo -e "    --with-git \e[2m..........................\e[00m installs \"git\" package"
+  echo " "
+  echo -e "    --fetch-repo=\"puppet.git\"\e[2m............\e[00m defines repository to fetch into \"/etc/puppet\""
+  echo " "
+  echo -e "    --quiet, -q \e[2m.........................\e[00m alias for \"--skip-out\" and \"--skip-log\""
+  echo " "
+  echo -e "    --help, -h \e[2m..........................\e[00m show this help screen"
+  echo " "
+  echo " "
+  echo -e "  \e[1mDEFAULTS:\e[00m"
+  echo -e "    - If no \"install-*\" flags are passed, the default Puppet client will be installed"
+  echo " "
+  echo " "
+  echo -e "  \e[1mNOTES:\e[00m"
+  echo -e "    - Always run the Bootstrapper via \"bash\" as a number of builtins are not available via Sh"
+  echo -e "    - \"fetch-repo\" expects a Git URL like: \"git@bitbucket.org:structedio/puppet.git\""
+  echo " "
+  echo " "
+  echo -e "  Additional documentation can be found in the README or via \e[4m${PROJECT_HOME}\e[00m."
+  echo " "
+
+  # bail out!
+  exit 0
+}
+### end: show_help
+
+
+###
+ # utility function to show git instructions text
+ #
+ # @method show_instructions_git
+###
+show_instructions_git() {
+  echo " "
+  echo " "
+  echo "----------------------------------------"
+  log_stdout "${BOOTSTRAPPER_NAME} was unable to find a suitable Git binary."
+  echo " "
+  log_stdout "You can solve this by following these instructions:"
+  log_stdout "1.) Install Git"
+  log_stdout "2.) Remove or backup the contents of ${PUPPET_ETC_PATH}"
+  log_stdout "3.) Clone the repository to ${PUPPET_ETC_PATH}"
+  echo " "
+  log_stdout "To make things easier, you can also run the included wrapper like so:"
+  log_stdout "bash ${0} --create-git-wrapper"
+  echo "----------------------------------------"
+  echo " "
+  echo " "
+}
+### end: show_instructions_git
+
+
+###
+ # wrapper function to write to STDOUT and log file
+ #
+ # @method log_stdout
+ # @param $1 contains the string to write
+ # @param $2 [optional] when set to "NOFILE" will ONLY print to STDOUT (vs. to STDOUT as well as log file)
+###
+log_stdout() {
+  # only write to STDOUT if "quiet" option is not set to true
+  if [ "${OPTS_SKIP_OUT}" == "false" ]
+    then
+    MESSAGE="[$(date +"${TIMESTAMP_FORMAT}")] ${1}"
+
+    echo "${MESSAGE}"
+
+    # only write to file if ${2} is not set to "NOFILE"
+    if [ "${2}" != "NOFILE" ]
+      then
+      util_write_log "${MESSAGE}"
+    fi
+  fi
+}
+### end: log_stdout
+
+
+###
+ # wrapper function to write to STDERR and log file
+ #
+ # @method log_stderr
+ # @param $1 contains the string to write
+ # @param $2 [optional] when set to "NOFILE" will ONLY print to STDERR (vs. to STDERR as well as log file)
+ # @param $3 [optional] when set to integer, will exit with value as status code
+###
+log_stderr() {
+  MESSAGE="[$(date +"${TIMESTAMP_FORMAT}")] [ERROR] ${1}"
+
+  # format error message
+  util_log_stderr "${MESSAGE}"
+
+  # only write to file if ${2} is set to "1"
+  if [ "${2}" == "1" ]
+    then
+
+    # append error message to log file
+    util_write_log "[ERROR] ${1}"
+  fi
+
+  # exit with status code
+  exit 1
+}
+### end: log_stderr
+
+
+###
+ # utility function to check if current shell is /bin/bash
+ #
+ # @method check_shell
+###
+check_shell() {
+  # check if variable is set
+  if [ ! -z "${BASH}" ]
+    then
+    # set current shell
+    CURRENT_SHELL="$(basename "${BASH}")"
+
+    if [ "${CURRENT_SHELL}" != "$(basename "${BASH}")" ]
+      then
+      log_stderr "Unable to run in shell: \"${BASH}\". Must be \"bash\" to continue." "NOFILE" 1
       exit 1
     fi
-
-
-    ### install Puppet via package manager
-    echolog "#4 - installing Puppet"
-
-    if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
-      then
-        yum "${ARGS_YUM}" install puppet > "${FILE_LOG}" 2>&1
-    elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
-      then
-        apt-get "${ARGS_APT}" install puppet
-    fi
-
-    ### install dependencies via Puppet
-    echolog "#5 - installing core dependencies"
-
-    if [[ "${BOOTSTRAP_DIST}" == "redhat" ]]
-      then
-        puppet apply --execute "package { 'crontabs': ensure => 'installed' }"
-    elif [[ "${BOOTSTRAP_DIST}" == "debian" ]]
-      then
-        puppet apply --execute "package { 'cron': ensure => 'installed' }"
-    fi
-
-
-    ### check if repository have been previously set, see CONSTRUCT-11
-    if [[ ! -z "${BOOTSTRAP_REPO}" ]]
-    then
-      echolog "#6 - Automatically setting repository details"
-      echolog "BOOTSTRAP_REPO: ${BOOTSTRAP_REPO}"
-
-      ### stop password from being logged in plain-text
-      ###echolog "BOOTSTRAP_PASS: $(for a in `seq ${#BOOTSTRAP_PASS}`; do echo -n '*'; done)"
-    else
-      ### loop while input is empty or not previously set
-      while [[ -z "${BOOTSTRAP_REPO}" ]]
-      do
-        echolog "#6 - What is the HTTP(s) location of your Puppet manifests?"
-        echo "Acceptable format: http(s)://user:pass@structed.io/repository"
-        read BOOTSTRAP_REPO
-      done
-    fi
-
-    # detect repository type by looking at the last three characters of the
-    # address; empty responses would indicate that this is not a git repo,
-    # so default to svn instead
-    BOOTSTRAP_TYPE="${BOOTSTRAP_REPO:${#BOOTSTRAP_REPO} - 3}"
-
-    if [[ "${BOOTSTRAP_TYPE}" != "git" ]]
-    then
-      BOOTSTRAP_TYPE="subversion"
-    fi
-
-
-    ### install VCS tools
-    echolog "#7 - installing VCS tools"
-
-    ### use inline Puppet for better OS support, see CONSTRUCT-13, CONSTRUCT-14
-    if [[ "${BOOTSTRAP_TYPE}" == "git" ]]
-    then
-      puppet apply --execute "package { 'git': ensure => 'installed' }"
-    else
-      puppet apply --execute "package { 'subversion': ensure => 'installed' }"
-    fi
-
-    ### create Puppet run scripts
-    echolog "#8 - creating Puppet run scripts"
-
-    ### check if  init script filename has been set or default to safe choice
-    if [[ -z "${BOOTSTRAP_INIT}" ]]
-    then
-      BOOTSTRAP_INIT="init.pp"
-    fi
-
-    ### get rid of default Puppet directory
-    rm -rf ${PUPPET_HOME:?}
-
-    ### check out manifests and associated files, see CONSTRUCT-4
-    if [[ "${BOOTSTRAP_TYPE}" == "git" ]]
-    then
-      ### get it all!
-      git clone "${BOOTSTRAP_REPO}" "${PUPPET_HOME}"
-      git pull
-      git submodule init
-      git submodule update
-    else
-      svn co "${BOOTSTRAP_REPO}" "${PUPPET_HOME}"
-    fi
-
-    ### write call for puppet apply file
-    echo -n "puppet apply /etc/puppet/manifests/${BOOTSTRAP_INIT}" > "${FILE_PUPPET_APPLY}"
-
-    ### write calls for puppet run file
-    echo -e "sh ${FILE_PUPPET_UPDATE}" > "${FILE_PUPPET_RUN}"
-    echo -e "sh ${FILE_PUPPET_APPLY}" >> "${FILE_PUPPET_RUN}"
-
-    ### create crontab file and add it to crontab
-    echolog "#9 - creating crontab"
-
-    echo " " >> "${FILE_CRONTAB}"
-    echo "# generated by puppet-bootstrapper on ${TIMESTAMP}" >> "${FILE_CRONTAB}"
-
-
-    echo "*/30 * * * * && ${FILE_PUPPET_RUN} > /dev/null" > "${FILE_CRONTAB}"
-    crontab -u "${USER}" "${FILE_CRONTAB}"
-
-
-    echolog "#10 - run puppet for the first time"
-    bash "${FILE_PUPPET_UPDATE}"
-    bash "${FILE_PUPPET_APPLY}"
-
-
-    ### create lockfile
-    echolog "#11 - creating lockfile"
-    echo -e "last run: ${TIMESTAMP}" > "${PUPPET_LOCK}"
-    echo " "
-
-
-  ### show warning if script has been run before
   else
-    echo "#####"
-    echolog "#${PUPPET_LOCK} has been found, aborting."
-    echo "#####"
-  fi # end if for PUPPET_LOCK
-fi # end if for root check
+    log_stderr "Unable to determine shell. Must be \"bash\" to continue." "NOFILE" 1
+    exit 1
+  fi
+}
+### end: check_shell
+
+
+###
+ # utility function to check if current user has superuser privileges
+ #
+ # @method check_privileges
+###
+check_privileges() {
+  if [ "$(id -u)" != "0" ]
+    then
+    log_stderr "Unable to run without superuser privileges. Must be \"root\" to continue." "NOFILE" 1
+    exit 1
+  fi
+}
+### end: check_privileges
+
+
+###
+ # parse command-line options
+ #
+ # @method parse_options
+###
+parse_options() {
+  log_stdout "Attempting to parse options" "NOFILE"
+
+  # allow parsing of long and short opts argument, inspired by http://dcmnt.me/1CHMN3e
+  while getopts "${OPTIONS_SHORT}" OPTION; do
+    case "${OPTION}" in
+      -)
+        case "${OPTARG}" in
+
+          install-master)
+            log_stdout "Switching package to install \"${PACKAGE_PUPPETMASTER}\""
+            PACKAGE_NAME="${PACKAGE_PUPPETMASTER}"
+          ;;
+
+          install-master-passenger)
+            log_stdout "Switching package to install \"${PACKAGE_PUPPETMASTER_PASSENGER}\""
+            PACKAGE_NAME="${PACKAGE_PUPPETMASTER_PASSENGER}"
+          ;;
+
+          skip-out)
+            # TODO: figure out a way to suppress ALL messages to STDOUT
+            log_stdout "Suppressing most messages to STDOUT from this point on!"
+            OPTS_SKIP_OUT="true"
+          ;;
+
+          # skip-err)
+          # log_stdout "Setting option: \"skip-err\"" "NOFILE"
+          # OPTS_SKIP_ERR="true"
+          #   ;;
+
+          skip-log)
+            log_stdout "Setting option: \"skip-log\""
+            OPTS_SKIP_LOG="true"
+          ;;
+
+          skip-test)
+            log_stdout "Setting option: \"skip-test\""
+            OPTS_SKIP_TEST="true"
+          ;;
+
+          skip-lock)
+            log_stdout "Setting option: \"skip-lock\""
+            OPTS_SKIP_LOCK="true"
+          ;;
+
+          with-deepmerge)
+            log_stdout "Setting option: \"with-deepmerge\""
+            OPTS_WITH_DEEPMERGE="true"
+          ;;
+
+          with-librarian)
+            log_stdout "Setting option: \"with-librarian\""
+            OPTS_WITH_LIBRARIAN="true"
+          ;;
+
+          with-r10k)
+            log_stdout "Setting option: \"with-r10k\""
+            OPTS_WITH_R10K="true"
+          ;;
+
+          with-eyaml)
+            log_stdout "Setting option: \"with-eyaml\""
+            OPTS_WITH_EYAML="true"
+          ;;
+
+          quiet)
+            log_stdout "Setting options:" "NOFILE"
+            log_stdout "                 \"skip-out\""
+            # log_stdout "                 \"skip-err\"" "NOFILE"
+            log_stdout "                 \"skip-log\""
+
+            OPTS_SKIP_OUT="true"
+            # OPTS_SKIP_ERR="true"
+            OPTS_SKIP_LOG="true"
+          ;;
+
+          help)
+            show_help
+          ;;
+
+          *)
+            log_stderr "Unsupported option: \e[1m\"--${OPTARG}\"\e[00m" "NOFILE" 1
+            ;;
+
+        esac;;
+
+      q)
+        log_stdout "Setting options:" "NOFILE"
+        log_stdout "                 \"skip-out\""
+        # log_stdout "                 \"skip-err\"" "NOFILE"
+        log_stdout "                 \"skip-log\""
+
+        OPTS_SKIP_OUT="true"
+        # OPTS_SKIP_ERR="true"
+        OPTS_SKIP_LOG="true"
+        ;;
+
+        h)
+          show_help
+          ;;
+
+      *)
+        log_stderr "Unsupported option: \"-${OPTARG}\"" "NOFILE" 1
+        ;;
+    esac
+  done
+}
+### end: parse_options
+
+
+###
+ # handle unknown operating systems
+ #
+ # @method handle_unknown_os
+###
+handle_unknown_os() {
+  echo " "
+  log_stderr "Unsupported OS found: \e[1m\"${ID}\"\e[00m"
+  echo " "
+  log_stderr "You can help us fix this problem by reporting it."
+  log_stderr "We'd like to receive the following information:"
+  echo " "
+  log_stderr "\e[2m---\e[00m"
+  log_stderr "\e[1mOS:     ${NAME} ${VERSION} (${ID})\e[00m"
+  log_stderr "\e[1mArch:   $(uname --processor)\e[00m"
+  log_stderr "\e[2m---\e[00m"
+  echo " "
+  log_stderr "Additionally, you can include the log file:"
+  log_stderr "${BOOTSTRAPPER_LOG}"
+  echo " "
+  log_stderr "The bug tracker is available at \e[4m${PROJECT_BUGTRACKER}\e[00m"
+
+  # bail out!
+  exit 1
+}
+### end: handle_unknown_os
+
+
+###
+ # create a workspace
+ #
+ # @method create_workspace
+###
+create_workspace() {
+  log_stdout "Attempting to validate workspace" "NOFILE"
+
+  # check if workspace directory exists
+  if [ ! -d "${BOOTSTRAPPER_HOME}" ]
+    then
+    log_stdout "No workspace found at \"${BOOTSTRAPPER_HOME}\"" "NOFILE"
+
+    # attempt to (safely) create workspace directory;
+    # if successful, this will exit with code zero
+    mkdir -p "${BOOTSTRAPPER_HOME}" > "${SILENCE_OUT}" 2>&1
+    CW_EXITCODE="${?}"
+
+    if [ "${CW_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to create workspace \"${BOOTSTRAPPER_HOME}\", aborting" "NOFILE" 1
+    else
+      log_stdout "Workspace created at \"${BOOTSTRAPPER_HOME}\"" "NOFILE"
+    fi
+
+  else
+    log_stdout "Found pre-existing workspace at \"${BOOTSTRAPPER_HOME}\"" "NOFILE"
+  fi
+}
+### end: create_workspace
+
+
+###
+ # check for and create lock file
+ #
+ # @method create_lockfile
+
+###
+create_lockfile() {
+  log_stdout "Attempting to validate lock file"
+
+  # check if bootstrapper lock exists
+  if [ -f "${BOOTSTRAPPER_LOCK}" ] &&  [ "${OPTS_SKIP_LOCK}" == "FALSE" ]
+    then
+      log_stderr "Found pre-existing lock file found at \"${BOOTSTRAPPER_LOCK}\", aborting" 1
+  else
+    log_stdout "Attempting to create lock file at \"${BOOTSTRAPPER_HOME}\""
+
+    util_safely_touch_file "${BOOTSTRAPPER_LOCK}"
+
+    # arriving here indicates that util_safely_touch_file did not exit with an error,
+    # thus writing to BOOTSTRAPPER_LOCK was possible; no need to check permissions again
+    log_stdout "Updating lock file with last-run timestamp"
+
+    # update lock file with last-run timestamp
+    echo "${BOOTSTRAPPER_NAME} last ran on $(date +"${TIMESTAMP_FORMAT_SHORT}")" > "${BOOTSTRAPPER_LOCK}"
+  fi
+}
+### end: create_lockfile
+
+
+###
+ # determine the operating system
+ #
+ # @method determine_os
+###
+determine_os() {
+  log_stdout "Attempting to determine operating system"
+
+  # check if OS Release file is available
+  if [ -f "${OS_RELEASE}" ]
+    then
+    # source OS_RELEASE to make its contents available for the duration of this run
+    source "${OS_RELEASE}" "${SILENCE_OUT}" 2>&1
+    DHO_EXITCODE="${?}"
+
+    if [ "${DHO_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to source OS information from \"${OS_RELEASE}\", aborting" 1
+    fi
+
+  # check if alternate OS release file is available
+  elif [ -f "${OS_RELEASE_RHEL}" ]
+    then
+    source "${OS_RELEASE_RHEL}" "${SILENCE_OUT}" 2>&1
+    DHOR_EXITCODE="${?}"
+
+    if [ "${DHOR_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to source OS information from \"${OS_RELEASE_RHEL}\", aborting" 1
+    fi
+  else
+    log_stderr "No OS information available at \"${OS_RELEASE}\" or \"${OS_RELEASE_RHEL}\", aborting" 1
+  fi
+
+  # make sure ID was bound from OS_RELEASE
+  if [ ! -z "${ID}" ]
+    then
+      # actually attempt to figure out host OS
+      if [ "${ID}" == "${OS_ID_CENTOS}" ] || [ "${ID}" == "${OS_ID_REDHAT}" ]
+        then
+        # CentOS can use the RHEL YUM repo
+        HOST_OS="${OS_ID_REDHAT}"
+
+        # RHEL-based systems have an OS ID that contains both major and minor version
+        # like so: 7.1, 6.5 etc. We are only interested in the major version though:
+        VERSION_ID="${VERSION_ID:0:1}"
+
+      elif [ "${ID}" == "${OS_ID_AMAZON}" ]
+        then
+        handle_unknown_os
+
+      elif [ "${ID}" == "${OS_ID_UBUNTU}" ] || [ "${ID}" == "${OS_ID_DEBIAN}" ]
+        then
+        # Ubuntu can use the Debian APT repo
+        HOST_OS="${OS_ID_DEBIAN}"
+        HOST_CODENAME=$(lsb_release --short --codename)
+
+      else
+        # handle unknown OS
+        handle_unknown_os
+      fi
+
+      # set OS version, too
+      HOST_OS_VERSION="${VERSION_ID}"
+
+      # arriving here means we are in a supported OS, let's continue on
+      # log_stdout "Host OS is: ${HOST_OS}"
+      # log_stdout "Host OS version is: ${HOST_OS_VERSION}"
+  else
+    log_stderr "No OS ID available via the \"ID\" variable, aborting" 1
+  fi
+}
+### end: determine_os
+
+
+###
+ # check if generic and OS-specific prerequisites are available
+ #
+ # @method check_prerequisites
+###
+check_prerequisites() {
+  log_stdout "Attempting to check prerequisites"
+
+  # check generic prerequisites
+  util_check_application_availability "${PREREQUISITES[@]}"
+
+  if [ "${HOST_OS}" == "${OS_ID_REDHAT}" ]
+    then
+    util_check_application_availability "${PREREQUISITES_REDHAT[@]}"
+
+  elif [ "${HOST_OS}" == "${OS_ID_DEBIAN}" ]
+    then
+    util_check_application_availability "${PREREQUISITES_DEBIAN[@]}"
+
+  fi
+}
+### end: check_prerequisites
+
+
+###
+ # determine if curl or wget should be used
+ #
+ # @method determine_fetcher
+###
+determine_fetcher() {
+  log_stdout "Attempting to determine fetcher binary"
+
+  # check if cURL is available, inspired by http://dcmnt.me/1cCCCDo
+  type \
+    "${BINARY_CURL}" \
+    > "${SILENCE_OUT}" 2>&1
+
+  DFC_EXITCODE="${?}"
+
+  if [ "${DFC_EXITCODE}" -ne "0" ]
+    then
+    log_stdout "Unable to find \"${BINARY_CURL}\" binary, attempting to find \"${BINARY_WGET}\""
+
+    type \
+      "${BINARY_WGET}" \
+      > "${SILENCE_OUT}" 2>&1
+
+      DFW_EXITCODE="${?}"
+
+      if [ "${DFW_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to find \"${BINARY_CURL}\" or \"${BINARY_WGET}\" binaries, aborting" 1
+      else
+        FETCHER_UTIL="${BINARY_WGET}"
+      fi
+
+  else
+    FETCHER_UTIL="${BINARY_CURL}"
+  fi
+
+  # final check if fetcher utility is set correctly
+  if [ -z "${FETCHER_UTIL}" ]
+    then
+    # print error and exit
+    log_stderr "FETCHER_UTIL variable is empty, aborting" 1
+  fi
+}
+### end: determine_fetcher
+
+
+###
+ # fetch repository data
+ #
+ # @method fetch_package_repo
+###
+fetch_package_repo() {
+  log_stdout "Attempting to generate repository URL"
+
+  # check if host OS is RHEL-based
+  if [ "${HOST_OS}" == "${OS_ID_REDHAT}" ]
+    then
+    # disable shellcheck validation for SC2059 as we do indeed want to use a variable
+    # shellcheck disable=SC2059
+    REPO_URL=$(printf "${REPO_URL_REDHAT}" "${HOST_OS_VERSION}")
+    # shellcheck disable=SC2059
+    REPO_FILE=$(printf "${REPO_FILE_REDHAT}" "${HOST_OS_VERSION}")
+
+  # check if host OS is Debian-based
+  elif [ "${HOST_OS}" == "${OS_ID_DEBIAN}" ]
+    then
+    # disable shellcheck validation for SC2059 as we do indeed want to use a variable
+    # shellcheck disable=SC2059
+    REPO_URL=$(printf "${REPO_URL_DEBIAN}" "${HOST_CODENAME}")
+    # shellcheck disable=SC2059
+    REPO_FILE=$(printf "${REPO_FILE_DEBIAN}" "${HOST_CODENAME}")
+  fi
+
+  # attempt to fetch repository
+  log_stdout "Attempting to fetch repository data"
+
+  if [ -z "${REPO_URL}" ]
+    then
+    # print error and exit
+    log_stderr "REPO_URL variable is empty, aborting" 1
+
+  elif [ -z "${REPO_FILE}" ]
+    then
+    # print error and exit
+    log_stderr "REPO_FILE variable is empty, aborting" 1
+
+  else
+    # retrieval logic for curl
+    if [ "${FETCHER_UTIL}" == "${BINARY_CURL}" ]
+      then
+      ${FETCHER_UTIL} \
+        --fail \
+        --silent \
+        --netrc-optional \
+        --output "${REPO_FILE}" \
+        "${REPO_URL}"
+    elif [ "${FETCHER_UTIL}" == "${BINARY_WGET}" ]
+      then
+      ${FETCHER_UTIL} \
+        --quiet \
+        --output-document="${REPO_FILE}" \
+        "${REPO_URL}"
+    fi
+
+    FRC_EXITCODE="${?}"
+
+    if [ "${FRC_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to fetch repository data from \"${REPO_URL}\" using \"${FETCHER_UTIL}\", aborting" 1
+    fi
+  fi
+}
+### end: fetch_package_repo
+
+
+###
+ # install repository data
+ #
+ # @method install_package_repo
+###
+install_package_repo() {
+  log_stdout "Attempting to install repository data"
+
+  # check if host OS is RHEL-based
+  if [ "${HOST_OS}" == "${OS_ID_REDHAT}" ]
+    then
+
+    log_stdout "Attempting to locate \"yum-complete-transaction\""
+
+    # inspired by http://dcmnt.me/1cCCCDo
+    type \
+      "yum-complete-transaction" \
+      > "${SILENCE_OUT}" 2>&1
+
+    IRW_EXITCODE="${?}"
+
+    if [ "${IRW_EXITCODE}" -ne "0" ]
+      then
+      log_stdout "Unable to find \"yum-complete-transaction\", continuing without completing previous transactions"
+    else
+      log_stdout "Attempting to complete possibly unfinished transactions"
+
+      yum-complete-transaction \
+        --quiet \
+        > "${SILENCE_OUT}" 2>&1
+
+      IRY_EXITCODE="${?}"
+
+      if [ "${IRY_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to complete possibly unfinished transactions, aborting" 1
+      fi
+    fi
+
+    # install YUM repository, skip signature check because Puppet does not always
+    yum \
+      --assumeyes \
+      --quiet \
+      install \
+      "${REPO_FILE}" \
+      > "${SILENCE_OUT}" 2>&1
+
+    IRR_EXITCODE="${?}"
+
+    if [ "${IRR_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to install YUM repository from \"${REPO_FILE}\", aborting" 1
+    fi
+
+  # check if host OS is Debian-based
+  elif [ "${HOST_OS}" == "${OS_ID_DEBIAN}" ]
+    then
+    # install APT repository
+    dpkg \
+      --install \
+      --log="${REPO_DEBIAN_LOG}" \
+      "${REPO_FILE}" \
+      > "${SILENCE_OUT}" 2>&1
+
+    IRD_EXITCODE="${?}"
+
+    if [ "${IRD_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to install APT repository from \"${REPO_FILE}\", aborting" 1
+
+      # update apt
+      apt-get \
+        update \
+        > "${SILENCE_OUT}" 2>&1
+
+      IRA_EXITCODE="${?}"
+
+      if [ "${IRA_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to update APT repository, aborting" 1
+      fi
+
+    fi
+
+  fi
+}
+### end: install_package_repo
+
+
+###
+ # remove previously installed package(s)
+ #
+ # @method remove_puppet_package
+###
+remove_puppet_package() {
+  log_stdout "Attempting to remove previously installed package(s)"
+
+  # check if host OS is RHEL-based
+  if [ "${HOST_OS}" == "${OS_ID_REDHAT}" ]
+    then
+    yum \
+      --assumeyes \
+      --quiet \
+      remove \
+      "${PACKAGE_REMOVALS[0]}" "${PACKAGE_REMOVALS[1]}" \
+      > "${SILENCE_OUT}" 2>&1
+
+    RPY_EXITCODE="${?}"
+
+    if [ "${RPY_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to remove YUM package(s), aborting" 1
+    else
+      log_stdout "Successfully removed YUM package(s)"
+    fi
+
+  # check if host OS is Debian-based
+  elif [ "${HOST_OS}" == "${OS_ID_DEBIAN}" ]
+    then
+    apt-get \
+      --assume-yes \
+      --quiet \
+      autoremove \
+      "${PACKAGE_REMOVALS[0]}" "${PACKAGE_REMOVALS[1]}" \
+      > "${SILENCE_OUT}" 2>&1
+
+    RPA_EXITCODE="${?}"
+
+    if [ "${RPA_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to remove DEB package(s), aborting" 1
+    else
+      log_stdout "Successfully removed DEB package(s)"
+    fi
+
+  fi
+}
+### end: remove_puppet_package
+
+
+###
+ # install the package(s)
+ #
+ # @method install_puppet_package
+###
+install_puppet_package() {
+  log_stdout "Attempting to install package(s)"
+
+  # check if host OS is RHEL-based
+  if [ "${HOST_OS}" == "${OS_ID_REDHAT}" ]
+    then
+    yum \
+      --assumeyes \
+      --quiet \
+      install \
+      "${PACKAGE_NAME}" \
+      > "${SILENCE_OUT}" 2>&1
+
+      IPY_EXITCODE="${?}"
+
+    if [ "${IPY_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to install YUM package, aborting" 1
+    else
+      log_stdout "Successfully installed YUM package"
+    fi
+
+  # check if host OS is Debian-based
+  elif [ "${HOST_OS}" == "${OS_ID_DEBIAN}" ]
+    then
+    apt-get \
+      --assume-yes \
+      install \
+      "${PACKAGE_NAME}" \
+      > "${SILENCE_OUT}" 2>&1
+
+    IPA_EXITCODE="${?}"
+
+    if [ "${IPA_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to install DEB packagem, aborting" 1
+    else
+      log_stdout "Successfully installed DEB package"
+    fi
+  fi
+}
+### end: install_puppet_package
+
+
+###
+ # conditionally install deep_merge Gem
+ #
+ # @method install_deepmerge
+###
+install_deepmerge() {
+  if [ "${OPTS_WITH_DEEPMERGE}" == "true" ]
+    then
+    log_stdout "Attempting to install \"deep_merge\" Gem"
+
+    install_gem \
+      "deep_merge" \
+      > "${SILENCE_OUT}" 2>&1
+
+      IGD_EXITCODE="${?}"
+
+      if [ "${IGD_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to install \"deep_merge\" Gem"
+      else
+        log_stdout "Successfully installed \"deep_merge\" Gem"
+      fi
+  fi
+}
+### end: install_deepmerge
+
+
+###
+ # conditionally install librarian-puppet Gem
+ #
+ # @method install_librarian
+###
+install_librarian() {
+  if [ "${OPTS_WITH_LIBRARIAN}" == "true" ]
+    then
+    log_stdout "Attempting to install \"librarian-puppet\" Gem"
+
+    install_gem \
+      "librarian-puppet" \
+      > "${SILENCE_OUT}" 2>&1
+
+      IGL_EXITCODE="${?}"
+
+      if [ "${IGL_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to install \"librarian-puppet\" Gem"
+      else
+        log_stdout "Successfully installed \"librarian-puppet\" Gem"
+      fi
+  fi
+}
+### end: install_librarian
+
+
+###
+ # conditionally install r10k Gem
+ #
+ # @method install_r10k
+###
+install_r10k() {
+  if [ "${OPTS_WITH_R10K}" == "true" ]
+    then
+    log_stdout "Attempting to install \"r10k\" Gem"
+
+    install_gem \
+      "r10k" \
+      > "${SILENCE_OUT}" 2>&1
+
+      IGR_EXITCODE="${?}"
+
+      if [ "${IGR_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to install \"r10k\" Gem"
+      else
+        log_stdout "Successfully installed \"r10k\" Gem"
+      fi
+  fi
+}
+### end: install_r10k
+
+
+###
+ # conditionally install hiera-eyaml Gem
+ #
+ # @method install_eyaml
+###
+install_eyaml() {
+  if [ "${OPTS_WITH_EYAML}" == "true" ]
+    then
+    log_stdout "Attempting to install \"hiera-eyaml\" Gem"
+
+    install_gem \
+      "hiera-eyaml" \
+      > "${SILENCE_OUT}" 2>&1
+
+      IGE_EXITCODE="${?}"
+
+      if [ "${IGE_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to install \"hiera-eyaml\" Gem"
+      else
+        log_stdout "Successfully installed \"hiera-eyaml\" Gem"
+      fi
+  fi
+}
+### end: install_eyaml
+
+
+###
+ # conditionally install puppet-lint Gem
+ #
+ # @method install_lint
+###
+install_lint() {
+  if [ "${OPTS_WITH_LINT}" == "true" ]
+    then
+    log_stdout "Attempting to install \"puppet-lint\" Gem"
+
+    install_gem \
+      "puppet-lint" \
+      > "${SILENCE_OUT}" 2>&1
+
+      IGE_EXITCODE="${?}"
+
+      if [ "${IGE_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to install \"puppet-lint\" Gem"
+      else
+        log_stdout "Successfully installed \"puppet-lint\" Gem"
+      fi
+  fi
+}
+### end: install_lint
+
+
+###
+ # conditionally install Git
+ #
+ # @method install_git
+###
+install_git() {
+  if [ "${OPTS_WITH_GIT}" == "true" ]
+    then
+    log_stdout "Attempting to install \"Git\" package"
+
+    puppet \
+      resource \
+      package "git" \
+      ensure=latest \
+      > "${SILENCE_OUT}" 2>&1
+
+    IGP_EXITCODE="${?}"
+
+    if [ "${IGP_EXITCODE}" -ne "0" ]
+    then
+      log_stderr "Unable to install Git package"
+    else
+      log_stdout "Successfully installed Git package"
+    fi
+  fi
+}
+### end: install_git
+
+
+###
+ # conditionally fetch Git repo
+ #
+ # @method fetch_git_repo
+###
+fetch_git_repo() {
+  # only run this if PUPPET_GIT_REPO is set
+  if [ -z "${PUPPET_GIT_REPO}" ]
+    then
+    log_stdout "Attempting to fetch git repository"
+
+    # check if git binary is available
+    log_stdout "Checking availability of \"${BINARY_GIT}\""
+    # inspired by http://dcmnt.me/1cCCCDo
+    type \
+      "${BINARY_GIT}" \
+      > "${SILENCE_OUT}" 2>&1
+
+    FGR_EXITCODE="${?}"
+
+    if [ "${FGR_EXITCODE}" -ne "0" ]
+      then
+      log_stdout "Unable to find \"${BINARY_GIT}\""
+
+      show_instructions_git
+
+      exit 1
+    else
+      # create archive of Puppet config directory
+      util_create_backup \
+        "${PUPPET_ETC_PATH}" \
+        "${PUPPET_ETC_BACKUP}"
+
+      FGA_EXITCODE="${?}"
+
+      if [ "${FGA_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to create backup of ${PUPPET_ETC_PATH}, aborting" 1
+      else
+        # remove PUPPET_ETC_PATH
+        # TODO: make this cleaner
+        rm -rf "${PUPPET_ETC_PATH}"
+
+        util_create_gitclone \
+          "${PUPPET_GIT_REPO}" \
+          "${PUPPET_ETC_PATH}"
+
+          FGG_EXITCODE="${?}"
+
+          if [ "${FGG_EXITCODE}" -ne "0" ]
+            then
+            log_stderr "Unable to create git clone of ${PUPPET_GIT_REPO}, aborting" 1
+          else
+            log_stdout "Successfully created git clone of ${PUPPET_GIT_REPO} in ${PUPPET_ETC_PATH}"
+          fi
+      fi
+    fi
+  fi
+}
+### end: fetch_git_repo
+
+
+###
+ # run agent in test mode
+ #
+ # @method run_agent
+###
+run_agent() {
+  # only run agent when we are on an agent node
+  if [ "${PACKAGE_NAME}" == "${PACKAGE_PUPPET}" ]
+    then
+
+    if [ "${OPTS_SKIP_TEST}" == "false" ]
+      then
+      log_stdout "Attempting to run Puppet Agent in test mode"
+
+      puppet \
+        agent \
+        --no-daemonize \
+        --test \
+        > "${SILENCE_OUT}" 2>&1
+
+      RAP_EXITCODE="${?}"
+
+      if [ "${RAP_EXITCODE}" -ne "0" ]
+        then
+        log_stderr "Unable to run Puppet Agent, aborting" 1
+      else
+        log_stdout "Successfully ran Puppet Agent"
+      fi
+
+    else
+      log_stdout "Skipping initial run of Puppet Agent in test mode"
+    fi
+fi
+}
+### end: run_agent
+
+
+###
+ # calculate runtime statistics
+ #
+ # @method calculate_statistics
+###
+calculate_statistics() {
+  BOOTSTRAPPER_DURATION=$(($(date  +'%s') - TIMESTAMP_START))
+  log_stdout "Total run took: ${BOOTSTRAPPER_DURATION} secs."
+}
+### end: calculate_statistics
+
+
+### let's hit the road!
+  show_header
+
+  check_shell
+
+  check_privileges
+
+  create_workspace
+
+  # parse_options needs to receive the full array
+  parse_options "${@}"
+
+  create_lockfile
+
+  determine_os
+
+  check_prerequisites
+
+  determine_fetcher
+
+  fetch_package_repo
+
+  remove_puppet_package
+
+  install_package_repo
+
+  install_puppet_package
+
+  install_deepmerge
+
+  install_librarian
+
+  install_r10k
+
+  install_eyaml
+
+  install_lint
+
+  install_git
+
+  fetch_git_repo
+
+  run_agent
+
+  calculate_statistics
