@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.2.3
+ #   structed.io - Puppet Bootstrapper v2.2.4
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -51,7 +51,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.2.3"
+BOOTSTRAPPER_VERSION="v2.2.4"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -386,62 +386,6 @@ MANIFEST
   fi
 }
 ### end: util_create_backup
-
-
-###
-# utility function to create Git clone using Puppet
- #
- # @method util_create_gitclone
- # @param $1 repository to clone
- # @param $2 directory to clone into
-###
-util_create_gitclone() {
-  GIT_REPO="${1}"
-  GIT_DIR="${2}"
-  MANIFEST_NAME="create git clone of ${BACKUP_DIR}"
-  MANIFEST_NAME_CLEAN="${MANIFEST_NAME// /-}"
-  MANIFEST_NAME_CLEAN="${MANIFEST_NAME_CLEAN//\//-}"
-  MANIFEST_FILE="${BOOTSTRAPPER_HOME}/${MANIFEST_NAME_CLEAN}.pp"
-
-  if [ -z "${GIT_REPO}" ] || [ -z "${GIT_DIR}" ]
-    then
-    log_stderr "GIT_REPO or GIT_DIR variables are empty, aborting" 1
-  else
-    # write manifest to file
-    cat << MANIFEST > "${MANIFEST_FILE}"
-    # create archive, see http://dcmnt.me/1GabGoi for more information
-    exec { '${MANIFEST_NAME}':
-      command   => 'git clone ${ARGS_GIT} ${GIT_REPO} ${GIT_DIR}',
-      logoutput => 'on_failure',
-
-      # without "path", the command fails; usually, you'll need the values below
-      # should your OS, however, need more, provide us with feedback via ${PROJECT_BUGTRACKER}
-      path      => '/bin:/usr/bin'
-    }
-MANIFEST
-
-    CBC_EXITCODE="${?}"
-
-    if [ "${CBC_EXITCODE}" -ne "0" ]
-      then
-      log_stderr "Unable to write manifest to ${MANIFEST_FILE}, aborting" 1
-    else
-      puppet \
-        apply \
-        "${MANIFEST_FILE}"
-
-      CBP_EXITCODE="${?}"
-
-      if [ "${CBP_EXITCODE}" -ne "0" ]
-        then
-        log_stderr "Unable to complete Puppet run, aborting" 1
-      else
-        log_stdout "Created git clone of ${GIT_REPO} in ${GIT_DIR}"
-      fi
-    fi
-  fi
-}
-### end: util_create_gitclone
 
 
 ###
@@ -1559,18 +1503,20 @@ fetch_git_repo() {
           # TODO: make this cleaner
           rm -rf "${PUPPET_ETC_PATH}"
 
-          util_create_gitclone \
+          git clone \
+            ${ARGS_GIT} \
             "${PUPPET_GIT_REPO}" \
-            "${PUPPET_ETC_PATH}"
+            "${PUPPET_ETC_PATH}" \
+            > "${SILENCE_OUT}" 2>&1
 
-            FGG_EXITCODE="${?}"
+          FGG_EXITCODE="${?}"
 
-            if [ "${FGG_EXITCODE}" -ne "0" ]
-              then
-              log_stderr "Unable to create git clone of ${PUPPET_GIT_REPO}, aborting" 1
-            else
-              log_stdout "Successfully created git clone of ${PUPPET_GIT_REPO} in ${PUPPET_ETC_PATH}"
-            fi
+          if [ "${FGG_EXITCODE}" -ne "0" ]
+            then
+            log_stderr "Unable to create git clone of ${PUPPET_GIT_REPO}, aborting" 1
+          else
+            log_stdout "Successfully created git clone of ${PUPPET_GIT_REPO} in ${PUPPET_ETC_PATH}"
+          fi
         else
           log_stdout "Skipping backup of \"${PUPPET_ETC_PATH}\""
         fi
