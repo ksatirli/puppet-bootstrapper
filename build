@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.2.2
+ #   structed.io - Puppet Bootstrapper v2.2.3
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -51,7 +51,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.2.2"
+BOOTSTRAPPER_VERSION="v2.2.3"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -412,7 +412,6 @@ util_create_gitclone() {
     # create archive, see http://dcmnt.me/1GabGoi for more information
     exec { '${MANIFEST_NAME}':
       command   => 'git clone ${ARGS_GIT} ${GIT_REPO} ${GIT_DIR}',
-      creates   => '${GIT_DIR}',
       logoutput => 'on_failure',
 
       # without "path", the command fails; usually, you'll need the values below
