@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.1.8
+ #   structed.io - Puppet Bootstrapper v2.2.0
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -51,7 +51,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.1.8"
+BOOTSTRAPPER_VERSION="v2.2.0"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -490,7 +490,7 @@ show_help() {
   echo -e "    --skip-log \e[2m..........................\e[00m suppress writing output (STDOUT, STDERR) to file"
   echo -e "    --skip-lock \e[2m.........................\e[00m skip initial check for Bootstrapper lockfile"
   echo -e "    --skip-test \e[2m.........................\e[00m skip initial test run for Puppet Agent"
-  echo -e "    --skip-backup \e[2m........................\e[00m skip creation of backup of \"/etc/puppet\""
+  echo -e "    --skip-backup \e[2m.......................\e[00m skip creation of backup of \"/etc/puppet\""
   echo " "
   echo -e "    --show-agent-log \e[2m....................\e[00m shows log for test run of Puppet Agent"
   echo " "
@@ -518,6 +518,17 @@ show_help() {
   echo -e "    - Always run the Bootstrapper via \"bash\" as a number of builtins are not available via Sh"
   echo -e "    - \"fetch-repo\" expects a Git URL like: \"git@bitbucket.org:structedio/puppet.git\""
   echo -e "    - \"timeout\" expects a number like \"30\", the default is ${TIMEOUT} seconds."
+  echo " "
+  echo " "
+  echo -e "  \e[EXAMPLES:\e[00m"
+  echo -e "    - Creating a Puppet Agent:"
+  echo -e "      bash ${0}"
+  echo " "
+  echo -e "    - Creating a Puppet Master:"
+  echo -e "      bash ${0} --install-master"
+  echo " "
+  echo -e "    - Creating a Puppet Master with R10k and Git:"
+  echo -e "      bash ${0} --install-master --with-r10k --with-git"
   echo " "
   echo " "
   echo -e "  Additional documentation can be found in the README or via \e[4m${PROJECT_HOME}\e[00m."
