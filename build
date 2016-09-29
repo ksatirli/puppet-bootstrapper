@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.1.5
+ #   structed.io - Puppet Bootstrapper v2.1.6
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -21,7 +21,7 @@ if [ ! -z "${BOOTSTRAPPER_DEBUG}" ] && [ "${BOOTSTRAPPER_DEBUG}" == "true" ]
   then
   set -x
 fi
-# end: toggle debug mode
+# end: enable debug mode
 
 
 ###
@@ -50,7 +50,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.1.5"
+BOOTSTRAPPER_VERSION="v2.1.6"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -109,7 +109,7 @@ PROJECT_HOME="https://con.structed.io/"
 PROJECT_BUGTRACKER="http://dcmnt.me/1OQiIU0"
 
 PUPPET_ETC_PATH="/etc/puppet"
-PUPPET_ETC_BACKUP="${BOOTSTRAPPER_HOME}/etc-puppet.backup.tar.gz"
+PUPPET_ETC_BACKUP="${BOOTSTRAPPER_HOME}/etc-puppet.backup-$(date  +"%${TIMESTAMP_FORMAT_REPO}").tar.gz"
 PUPPET_AGENT_LOG="puppet-agent.log"
 ###
  # end: configuration
