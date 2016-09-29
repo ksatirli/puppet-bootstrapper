@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.1.3
+ #   structed.io - Puppet Bootstrapper v2.1.4
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -17,6 +17,12 @@
 ###
 
 # enable debug mode by setting the ENV variable "BOOTSTRAPPER_DEBUG"
+if [ ! -z "${BOOTSTRAPPER_DEBUG}" ] && [ "${BOOTSTRAPPER_DEBUG}" == "true" ]
+  then
+  set -x
+fi
+# end: toggle debug mode
+
 
 ###
  # configuration
@@ -44,7 +50,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.1.3"
+BOOTSTRAPPER_VERSION="v2.1.4"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -269,7 +275,7 @@ util_check_git_credentials() {
     # inspired by http://dcmnt.me/1cCCCDo
     git \
       ls-remote \
-      ${TEST_GIT_URL} \
+      "${TEST_GIT_URL}" \
       > "${SILENCE_OUT}" 2>&1
 
     CGC_EXITCODE="${?}"
@@ -1620,47 +1626,47 @@ calculate_statistics() {
 
 
 ### let's hit the road!
-  show_header
+show_header
 
-  check_shell
+check_shell
 
-  # parse_options needs to receive the full array
-  parse_options "${@}"
+# parse_options needs to receive the full array
+parse_options "${@}"
 
-  check_privileges
+check_privileges
 
-  create_workspace
+create_workspace
 
-  create_lockfile
+create_lockfile
 
-  determine_os
+determine_os
 
-  check_prerequisites
+check_prerequisites
 
-  determine_fetcher
+determine_fetcher
 
-  fetch_package_repo
+fetch_package_repo
 
-  remove_puppet_package
+remove_puppet_package
 
-  install_package_repo
+install_package_repo
 
-  install_puppet_package
+install_puppet_package
 
-  install_deepmerge
+install_deepmerge
 
-  install_librarian
+install_librarian
 
-  install_r10k
+install_r10k
 
-  install_eyaml
+install_eyaml
 
-  install_lint
+install_lint
 
-  install_git
+install_git
 
-  fetch_git_repo
+fetch_git_repo
 
-  run_agent
+run_agent
 
-  calculate_statistics
+calculate_statistics
