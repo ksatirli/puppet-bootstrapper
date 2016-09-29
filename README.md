@@ -22,7 +22,7 @@ All the magic can easily be disabled, if you want to sit in the captain's chair 
 
 ## Requirements
 
-* an up-to-date installation of [Docker](https://docker.com/)
+* A `yum`-based OS such as RHEL, CentOS or Amazon Linux.
 
 ## Usage
 
