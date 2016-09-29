@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.4.2
+ #   structed.io - Puppet Bootstrapper v2.5.0
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -34,6 +34,7 @@ AGENT_LOG="${SILENCE_OUT}"
 OPTIONS_SHORT=":q:h:v-:"
 OPTIONS_LONG_FETCH="fetch-repo"
 OPTIONS_LONG_TIMEOUT="timeout"
+OPTIONS_LONG_MASTER="use-master"
 OPTIONS_LONG_COLLECTION="use-collection"
 OPTS_SKIP_OUT="false"
 # OPTS_SKIP_ERR="false"
@@ -53,7 +54,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/last-run.lock"
-BOOTSTRAPPER_VERSION="v2.4.2"
+BOOTSTRAPPER_VERSION="v2.5.0"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -124,6 +125,7 @@ PUPPET_ETC_PATH="/etc/puppet"
 PUPPET_ETC_BACKUP="${BOOTSTRAPPER_HOME}/etc-puppet.backup-$(date  +"${TIMESTAMP_FORMAT_REPO}").tar.gz"
 # PUPPET_ETC_BACKUP_PC="${BOOTSTRAPPER_HOME}/etc-puppetlabs.backup-$(date  +"${TIMESTAMP_FORMAT_REPO}").tar.gz"
 PUPPET_AGENT_LOG="puppet-agent.log"
+PUPPET_MASTER="puppet"
 ###
  # end: configuration
 ###
@@ -424,7 +426,8 @@ show_help() {
   echo -e "    --install-master\e[2m ....................\e[00m install Puppet Master in addition to client"
   echo -e "    --install-master-passenger\e[2m ..........\e[00m install Puppet Master with Passenger"
   echo " "
-  echo -e "    --use-collection=\"1\"\e[2m ................\e[00m installs a Puppet 4.x Collection (see notes!)"
+  echo -e "    ${OPTIONS_LONG_MASTER}=\"puppet\"\e[2m .................\e[00m defines Master for initial test run for Puppet Agent"
+  echo -e "    ${OPTIONS_LONG_COLLECTION}=\"1\"\e[2m ..................\e[00m installs a Puppet 4.x Collection (see notes!)"
   echo " "
   echo -e "    --skip-out\e[2m ..........................\e[00m suppress (most) output to STDOUT"
   # echo -e "    --skip-err\e[2m ..........................\e[00m suppress (most) output to STDERR"
@@ -443,8 +446,8 @@ show_help() {
   echo -e "    --with-lint\e[2m .........................\e[00m install \"puppet-lint\" Gem"
   echo -e "    --with-git\e[2m ..........................\e[00m install \"git\" package"
   echo " "
-  echo -e "    --fetch-repo=\"puppet.git\"\e[2m............\e[00m defines repository to fetch into \"/etc/puppet\""
-  echo -e "    --timeout=\"120\" \e[2m.....................\e[00m defines timeout for test run of Puppet Agent"
+  echo -e "    ${OPTIONS_LONG_FETCH}=\"puppet.git\"\e[2m..............\e[00m defines repository to fetch into \"/etc/puppet\""
+  echo -e "    ${OPTIONS_LONG_TIMEOUT}=\"120\" \e[2m.......................\e[00m defines timeout for test run of Puppet Agent"
   echo " "
   echo -e "    --quiet, -q \e[2m.........................\e[00m alias for \"--skip-out\" and \"--skip-log\""
   echo " "
@@ -458,9 +461,9 @@ show_help() {
   echo " "
   echo -e "  \e[1mNOTES:\e[00m"
   echo -e "    - Always run the Bootstrapper via \"bash\" as a number of builtins are not available via \"Sh\""
-  echo -e "    - \"fetch-repo\" expects a Git URL like: \"git@bitbucket.org:structedio/puppet.git\""
-  echo -e "    - \"timeout\" expects a number like \"30\", the default is \"${TIMEOUT}\" seconds."
-  echo -e "    - \"use-collection\" expects a number like \"1\", for valid options, see"
+  echo -e "    - \"${OPTIONS_LONG_FETCH}\" expects a Git URL like: \"git@bitbucket.org:structedio/puppet.git\""
+  echo -e "    - \"${OPTIONS_LONG_TIMEOUT}\" expects a number like \"30\", the default is \"${TIMEOUT}\" seconds."
+  echo -e "    - \"${OPTIONS_LONG_COLLECTION}\" expects a number like \"1\""
   echo " "
   echo " "
   echo -e "  \e[1mEXAMPLES:\e[00m"
@@ -471,7 +474,7 @@ show_help() {
   echo -e "      bash ${0} --install-master --with-r10k --with-git"
   echo " "
   echo -e "    - Installing a Puppet 4.x Agent from PC1"
-  echo -e "      bash ${0} --use-collection=\"1\""
+  echo -e "      bash ${0} ${OPTIONS_LONG_COLLECTION}=\"1\""
   echo " "
   echo " "
   echo -e "  Additional documentation can be found in the \"README.md\" or via \e[4m${PROJECT_HOME}\e[00m."
@@ -742,6 +745,10 @@ parse_options() {
               else
                 log_stdout "\"${OPTIONS_LONG_TIMEOUT}\" value is not an integer, defaulting to \"${TIMEOUT}\""
               fi
+            elif [ "${EQUALS_ARG_KEY}" == "${OPTIONS_LONG_MASTER}" ]
+              then
+              log_stdout "Setting \"PUPPET_MASTER\" to \"${EQUALS_ARG_VALUE}\""
+              PUPPET_MASTER="${EQUALS_ARG_VALUE}"
             elif [ "${EQUALS_ARG_KEY}" == "${OPTIONS_LONG_COLLECTION}" ]
               then
               # check if input is actually an integer,
@@ -1599,6 +1606,7 @@ run_agent() {
         agent \
         --test \
         --configtimeout="${TIMEOUT}" \
+        --server="${PUPPET_MASTER}"
         > "${AGENT_LOG}" 2>&1
 
       RA_EXITCODE="${?}"
