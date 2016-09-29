@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.2.4
+ #   structed.io - Puppet Bootstrapper v2.3.0
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -51,7 +51,7 @@ OPTS_SHOW_AGENT_LOG="false"
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
 BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.2.4"
+BOOTSTRAPPER_VERSION="v2.3.0"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -1143,7 +1143,7 @@ install_package_repo() {
       then
       log_stderr "Unable to install YUM repository from \"${REPO_FILE}\", aborting" 1
     else
-      log_stderr "Successfully installted YUM repository from \"${REPO_FILE}\""
+      log_stderr "Successfully installed YUM repository from \"${REPO_FILE}\""
     fi
 
   # check if host OS is Debian-based
@@ -1161,24 +1161,24 @@ install_package_repo() {
     if [ "${IRD_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to install APT repository from \"${REPO_FILE}\", aborting" 1
-
-      # update apt
-      apt-get \
-        update \
-        > "${SILENCE_OUT}" 2>&1
-
-      IRA_EXITCODE="${?}"
-
-      if [ "${IRA_EXITCODE}" -ne "0" ]
-        then
-        log_stderr "Unable to update APT repository, aborting" 1
-      else
-        log_stderr "Successfully updated APT repository"
-      fi
     else
-      log_stdout "Successfully installted APT repository from \"${REPO_FILE}\""
+      log_stdout "Successfully installed APT repository from \"${REPO_FILE}\""
     fi
 
+    # update apt
+    apt-get \
+    --quiet \
+      update \
+      > "${SILENCE_OUT}" 2>&1
+
+    IRA_EXITCODE="${?}"
+
+    if [ "${IRA_EXITCODE}" -ne "0" ]
+      then
+      log_stderr "Unable to update APT repository, aborting" 1
+    else
+      log_stdout "Successfully updated APT repository"
+    fi
   fi
 }
 ### end: install_package_repo
@@ -1266,6 +1266,7 @@ install_puppet_package() {
   elif [ "${HOST_OS}" == "${OS_ID_DEBIAN}" ]
     then
     apt-get \
+      --quiet \
       --assume-yes \
       install \
       "${PACKAGE_NAME}" \
