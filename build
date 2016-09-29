@@ -22,7 +22,7 @@
 SILENCE_OUT="/dev/null"
 
 # default values for command-line arguments
-OPTIONS_SHORT=":q:h-:"
+OPTIONS_SHORT=":q:h:v-:"
 OPTS_SKIP_OUT="false"
 # OPTS_SKIP_ERR="false"
 OPTS_SKIP_LOG="false"
@@ -369,6 +369,20 @@ MANIFEST
 
 
 ###
+ # utility function to show version text
+ #
+ # @method show_version
+###
+show_version() {
+  # echo "${BOOTSTRAPPER_NAME_FULL}"
+
+  # bail out!
+  exit 0
+}
+### end: show_version
+
+
+###
  # utility function to show header text
  #
  # @method show_header
@@ -420,6 +434,7 @@ show_help() {
   echo -e "    --quiet, -q \e[2m.........................\e[00m alias for \"--skip-out\" and \"--skip-log\""
   echo " "
   echo -e "    --help, -h \e[2m..........................\e[00m show this help screen"
+  echo -e "    --version, -v \e[2m.......................\e[00m show version information"
   echo " "
   echo " "
   echo -e "  \e[1mDEFAULTS:\e[00m"
@@ -564,7 +579,7 @@ check_privileges() {
  # @method parse_options
 ###
 parse_options() {
-  log_stdout "Attempting to parse options" "NOFILE"
+  # log_stdout "Attempting to parse options" "NOFILE"
 
   # allow parsing of long and short opts argument, inspired by http://dcmnt.me/1CHMN3e
   while getopts "${OPTIONS_SHORT}" OPTION; do
@@ -628,6 +643,16 @@ parse_options() {
             OPTS_WITH_EYAML="true"
           ;;
 
+          with-lint)
+            log_stdout "Setting option: \"with-lint\""
+            OPTS_WITH_LINT="true"
+          ;;
+
+          with-git)
+            log_stdout "Setting option: \"with-git\""
+            OPTS_WITH_GIT="true"
+          ;;
+
           quiet)
             log_stdout "Setting options:" "NOFILE"
             log_stdout "                 \"skip-out\""
@@ -641,6 +666,10 @@ parse_options() {
 
           help)
             show_help
+          ;;
+
+          version)
+            show_version
           ;;
 
           *)
@@ -662,6 +691,10 @@ parse_options() {
 
         h)
           show_help
+          ;;
+
+        v)
+          show_version
           ;;
 
       *)
@@ -1445,12 +1478,12 @@ calculate_statistics() {
 
   check_shell
 
+  # parse_options needs to receive the full array
+  parse_options "${@}"
+
   check_privileges
 
   create_workspace
-
-  # parse_options needs to receive the full array
-  parse_options "${@}"
 
   create_lockfile
 
