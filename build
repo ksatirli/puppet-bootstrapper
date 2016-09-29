@@ -8,7 +8,7 @@
  #   |___/  \__| |_|     \__,_|  \___|  \__|  \___|  \__,_|  (_)  |_|  \___/
  #
  #
- #   structed.io - Puppet Bootstrapper v2.3.0
+ #   structed.io - Puppet Bootstrapper v2.4.2
  #   bootstraps instances as Puppet Client or Master
  #
  #   normal installation: bash -c "$(curl -s https://con.structed.io/build)"
@@ -34,6 +34,7 @@ AGENT_LOG="${SILENCE_OUT}"
 OPTIONS_SHORT=":q:h:v-:"
 OPTIONS_LONG_FETCH="fetch-repo"
 OPTIONS_LONG_TIMEOUT="timeout"
+OPTIONS_LONG_COLLECTION="use-collection"
 OPTS_SKIP_OUT="false"
 # OPTS_SKIP_ERR="false"
 OPTS_SKIP_LOG="false"
@@ -51,8 +52,8 @@ OPTS_SHOW_AGENT_LOG="false"
 
 BOOTSTRAPPER_HOME="${HOME}/.puppet-bootstrapper"
 BOOTSTRAPPER_LOG="${BOOTSTRAPPER_HOME}/bootstrapper.log"
-BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/run.lock"
-BOOTSTRAPPER_VERSION="v2.3.0"
+BOOTSTRAPPER_LOCK="${BOOTSTRAPPER_HOME}/last-run.lock"
+BOOTSTRAPPER_VERSION="v2.4.2"
 BOOTSTRAPPER_NAME="Puppet Bootstrapper"
 BOOTSTRAPPER_NAME_FULL="${BOOTSTRAPPER_NAME} ${BOOTSTRAPPER_VERSION}"
 
@@ -84,7 +85,7 @@ BINARY_GIT="git"
 # -p = --preserve-permissions
 # -P = --absolute-names
 # see http://dcmnt.me/1yJYXZC for more information
-ARGS_TAR="-czpP --recursion"
+ARGS_TAR=(-czpP --recursion)
 
 # this is akin to using git clone puppet.git && git submodule init && git submodule update
 ARGS_GIT="--recursive"
@@ -93,6 +94,8 @@ ARGS_GIT="--recursive"
 # printf is used to replace "%s" with the version (RHEL) or codename (Debian)
 REPO_URL_REDHAT="http://yum.puppetlabs.com/puppetlabs-release-el-%s.noarch.rpm"
 REPO_URL_DEBIAN="https://apt.puppetlabs.com/puppetlabs-release-%s.deb"
+# REPO_URL_REDHAT_PC="puppetlabs-release-pc%s-el-%s.noarch.rpm"
+# REPO_URL_DEBIAN_PC="puppetlabs-release-pc%s-%s.deb"
 REPO_FILE_NAME="puppetlabs-release"
 REPO_FILE_REDHAT="${BOOTSTRAPPER_HOME}/${REPO_FILE_NAME}-%s.noarch.rpm"
 REPO_FILE_DEBIAN="${BOOTSTRAPPER_HOME}/${REPO_FILE_NAME}-%s.deb"
@@ -100,17 +103,26 @@ REPO_FILE_DEBIAN="${BOOTSTRAPPER_HOME}/${REPO_FILE_NAME}-%s.deb"
 #REPO_REDHAT_LOG="${BOOTSTRAPPER_HOME}/rpm-$(date +"${TIMESTAMP_FORMAT_REPO}").log"
 REPO_DEBIAN_LOG="${BOOTSTRAPPER_HOME}/dpkg-$(date +"${TIMESTAMP_FORMAT_REPO}").log"
 
+# Puppet 3.x configuration
 PACKAGE_PUPPET="puppet"
+PACKAGE_PUPPETDB="puppetdb-terminus"
 PACKAGE_PUPPETMASTER="puppetmaster"
 PACKAGE_PUPPETMASTER_PASSENGER="puppetmaster-passenger"
 PACKAGE_NAME="${PACKAGE_PUPPET}"
 PACKAGE_REMOVALS=(augeas* hiera* puppet*)
 
+# Puppet 4.x configuration
+# PACKAGE_PUPPET_PC="puppet-agent"
+# PACKAGE_PUPPETMASTER_PC="puppetserver"
+PACKAGE_COLLECTION_PREFIX="pc"
+
 PROJECT_HOME="https://con.structed.io/"
 PROJECT_BUGTRACKER="http://dcmnt.me/1OQiIU0"
 
 PUPPET_ETC_PATH="/etc/puppet"
+# PUPPET_ETC_PATH_PC="/etc/puppetlabs"
 PUPPET_ETC_BACKUP="${BOOTSTRAPPER_HOME}/etc-puppet.backup-$(date  +"${TIMESTAMP_FORMAT_REPO}").tar.gz"
+# PUPPET_ETC_BACKUP_PC="${BOOTSTRAPPER_HOME}/etc-puppetlabs.backup-$(date  +"${TIMESTAMP_FORMAT_REPO}").tar.gz"
 PUPPET_AGENT_LOG="puppet-agent.log"
 ###
  # end: configuration
@@ -246,9 +258,9 @@ util_check_application_availability() {
         "${APPLICATION}" \
         > "${SILENCE_OUT}" 2>&1
 
-      CPI_EXITCODE="${?}"
+      CAA_EXITCODE="${?}"
 
-      if [ "${CPI_EXITCODE}" -ne "0" ]
+      if [ "${CAA_EXITCODE}" -ne "0" ]
         then
         log_stdout "Unable to find \"${APPLICATION}\"" "NOFILE" 1
       fi
@@ -330,7 +342,7 @@ util_install_gem() {
 
 
 ###
- # utility function to create TAR backup using Puppet
+ # utility function to create TAR backup
  #
  # @method util_create_backup
  # @param $1 directory to backup
@@ -339,50 +351,28 @@ util_install_gem() {
 util_create_backup() {
   BACKUP_DIR="${1}"
   BACKUP_FILE="${2}"
-  MANIFEST_NAME="create tar archive of ${BACKUP_DIR}"
-  MANIFEST_NAME_CLEAN="${MANIFEST_NAME// /-}"
-  MANIFEST_NAME_CLEAN="${MANIFEST_NAME_CLEAN//\//-}"
-  MANIFEST_FILE="${BOOTSTRAPPER_HOME}/${MANIFEST_NAME_CLEAN}.pp"
 
   if [ -z "${BACKUP_DIR}" ] || [ -z "${BACKUP_FILE}" ]
     then
     log_stderr "BACKUP_DIR or BACKUP_FILE variables are empty, aborting" 1
   else
-    # write manifest to file
-    cat << MANIFEST > "${MANIFEST_FILE}"
-    # create archive, see http://dcmnt.me/1GabGoi for more information
-    exec { '${MANIFEST_NAME}':
-      command   => 'tar ${ARGS_TAR} ${BACKUP_DIR} > ${BACKUP_FILE}',
-      creates   => '${BACKUP_FILE}',
-      logoutput => 'on_failure',
-
-      # only run this if PUPPET_ETC_PATH is a directory
-      onlyif    => ['test -d ${PUPPET_ETC_PATH}'],
-
-      # without "path", the command fails; usually, you'll need the values below
-      # should your OS, however, need more, provide us with feedback via ${PROJECT_BUGTRACKER}
-      path      => '/bin:/usr/bin'
-    }
-MANIFEST
-
-    CBC_EXITCODE="${?}"
-
-    if [ "${CBC_EXITCODE}" -ne "0" ]
+    if [ ! -d "${PUPPET_ETC_PATH}" ]
       then
-      log_stderr "Unable to write manifest to ${MANIFEST_FILE}, aborting" 1
+      tar \
+        "${ARGS_TAR[@]}" \
+        "${BACKUP_DIR}" \
+        > "${BACKUP_FILE}"
+
+        UCB_EXITCODE="${?}"
+
+        if [ "${UCB_EXITCODE}" -ne "0" ]
+          then
+          log_stderr "Unable to create backup of ${BACKUP_DIR} in ${BACKUP_FILE}, aborting" 1
+        else
+          log_stdout "Created backup of ${BACKUP_DIR} in ${BACKUP_FILE}"
+        fi
     else
-      puppet \
-        apply \
-        "${MANIFEST_FILE}"
-
-      CBP_EXITCODE="${?}"
-
-      if [ "${CBP_EXITCODE}" -ne "0" ]
-        then
-        log_stderr "Unable to complete Puppet run, aborting" 1
-      else
-        log_stdout "Created backup of ${BACKUP_DIR} in ${BACKUP_FILE}"
-      fi
+      log_stdout "Directory \"${PUPPET_ETC_PATH}\" does not exist, no backup necessary"
     fi
   fi
 }
@@ -431,25 +421,27 @@ show_help() {
   echo " "
   echo " "
   echo -e "  \e[1mOPTIONS:\e[00m"
-  echo -e "    --install-master \e[2m....................\e[00m install Puppet Master in addition to client"
-  echo -e "    --install-master-passenger \e[2m..........\e[00m install Puppet Master with Passenger"
+  echo -e "    --install-master\e[2m ....................\e[00m install Puppet Master in addition to client"
+  echo -e "    --install-master-passenger\e[2m ..........\e[00m install Puppet Master with Passenger"
   echo " "
-  echo -e "    --skip-out \e[2m..........................\e[00m suppress (most) output to STDOUT"
-  # echo -e "    --skip-err \e[2m..........................\e[00m suppress (most) output to STDERR"
-  echo -e "    --skip-log \e[2m..........................\e[00m suppress writing output (STDOUT, STDERR) to file"
-  echo -e "    --skip-lock \e[2m.........................\e[00m skip initial check for Bootstrapper lockfile"
-  echo -e "    --skip-test \e[2m.........................\e[00m skip initial test run for Puppet Agent"
-  echo -e "    --skip-backup \e[2m.......................\e[00m skip creation of backup of \"/etc/puppet\""
+  echo -e "    --use-collection=\"1\"\e[2m ................\e[00m installs a Puppet 4.x Collection (see notes!)"
   echo " "
-  echo -e "    --show-agent-log \e[2m....................\e[00m shows log for test run of Puppet Agent"
+  echo -e "    --skip-out\e[2m ..........................\e[00m suppress (most) output to STDOUT"
+  # echo -e "    --skip-err\e[2m ..........................\e[00m suppress (most) output to STDERR"
+  echo -e "    --skip-log\e[2m ..........................\e[00m suppress writing output (STDOUT, STDERR) to file"
+  echo -e "    --skip-lock\e[2m .........................\e[00m skip initial check for Bootstrapper lockfile"
+  echo -e "    --skip-test\e[2m .........................\e[00m skip initial test run for Puppet Agent"
+  echo -e "    --skip-backup\e[2m .......................\e[00m skip creation of backup of \"/etc/puppet\""
   echo " "
-  echo -e "    --with-puppetdb\e[2m.....................\e[00m install PuppetDB package"
-  echo -e "    --with-deepmerge\e[2m.....................\e[00m install \"deep_merge\" Gem"
-  echo -e "    --with-librarian\e[2m.....................\e[00m install \"puppet-librarian\" Gem"
-  echo -e "    --with-r10k \e[2m.........................\e[00m install \"r10k\" Gem"
-  echo -e "    --with-eyaml \e[2m........................\e[00m install \"hiera-eyaml\" Gem"
-  echo -e "    --with-lint \e[2m.........................\e[00m install \"puppet-lint\" Gem"
-  echo -e "    --with-git \e[2m..........................\e[00m install \"git\" package"
+  echo -e "    --show-agent-log\e[2m ....................\e[00m shows log for test run of Puppet Agent"
+  echo " "
+  echo -e "    --with-puppetdb\e[2m .....................\e[00m install PuppetDB package"
+  echo -e "    --with-deepmerge\e[2m ....................\e[00m install \"deep_merge\" Gem"
+  echo -e "    --with-librarian\e[2m ....................\e[00m install \"puppet-librarian\" Gem"
+  echo -e "    --with-r10k\e[2m .........................\e[00m install \"r10k\" Gem"
+  echo -e "    --with-eyaml \e[2m .......................\e[00m install \"hiera-eyaml\" Gem"
+  echo -e "    --with-lint\e[2m .........................\e[00m install \"puppet-lint\" Gem"
+  echo -e "    --with-git\e[2m ..........................\e[00m install \"git\" package"
   echo " "
   echo -e "    --fetch-repo=\"puppet.git\"\e[2m............\e[00m defines repository to fetch into \"/etc/puppet\""
   echo -e "    --timeout=\"120\" \e[2m.....................\e[00m defines timeout for test run of Puppet Agent"
@@ -465,23 +457,24 @@ show_help() {
   echo " "
   echo " "
   echo -e "  \e[1mNOTES:\e[00m"
-  echo -e "    - Always run the Bootstrapper via \"bash\" as a number of builtins are not available via Sh"
+  echo -e "    - Always run the Bootstrapper via \"bash\" as a number of builtins are not available via \"Sh\""
   echo -e "    - \"fetch-repo\" expects a Git URL like: \"git@bitbucket.org:structedio/puppet.git\""
-  echo -e "    - \"timeout\" expects a number like \"30\", the default is ${TIMEOUT} seconds."
+  echo -e "    - \"timeout\" expects a number like \"30\", the default is \"${TIMEOUT}\" seconds."
+  echo -e "    - \"use-collection\" expects a number like \"1\", for valid options, see"
   echo " "
   echo " "
   echo -e "  \e[1mEXAMPLES:\e[00m"
-  echo -e "    - Creating a Puppet Agent:"
+  echo -e "    - Installing a Puppet Agent:"
   echo -e "      bash ${0}"
   echo " "
-  echo -e "    - Creating a Puppet Master:"
-  echo -e "      bash ${0} --install-master"
-  echo " "
-  echo -e "    - Creating a Puppet Master with R10k and Git:"
+  echo -e "    - Installing a Puppet Master with R10k and Git:"
   echo -e "      bash ${0} --install-master --with-r10k --with-git"
   echo " "
+  echo -e "    - Installing a Puppet 4.x Agent from PC1"
+  echo -e "      bash ${0} --use-collection=\"1\""
   echo " "
-  echo -e "  Additional documentation can be found in the README or via \e[4m${PROJECT_HOME}\e[00m."
+  echo " "
+  echo -e "  Additional documentation can be found in the \"README.md\" or via \e[4m${PROJECT_HOME}\e[00m."
   echo " "
 
   # bail out!
@@ -744,10 +737,21 @@ parse_options() {
               # inspired by http://dcmnt.me/1Ju4qUJ
               if [ "${EQUALS_ARG_VALUE}" -eq "${EQUALS_ARG_VALUE}" ]
                 then
-                log_stdout "Setting \"timeout\" value to \"${EQUALS_ARG_VALUE}\""
+                log_stdout "Setting \"${OPTIONS_LONG_TIMEOUT}\" value to \"${EQUALS_ARG_VALUE}\""
                 TIMEOUT="${EQUALS_ARG_VALUE}"
               else
-                log_stdout "\"timeout\" value is not an integer, defaulting to \"${TIMEOUT}\""
+                log_stdout "\"${OPTIONS_LONG_TIMEOUT}\" value is not an integer, defaulting to \"${TIMEOUT}\""
+              fi
+            elif [ "${EQUALS_ARG_KEY}" == "${OPTIONS_LONG_COLLECTION}" ]
+              then
+              # check if input is actually an integer,
+              # inspired by http://dcmnt.me/1Ju4qUJ
+              if [ "${EQUALS_ARG_VALUE}" -eq "${EQUALS_ARG_VALUE}" ]
+                then
+                log_stdout "Setting \"${OPTIONS_LONG_COLLECTION}\" value to \"${PACKAGE_COLLECTION_PREFIX}${EQUALS_ARG_VALUE}\""
+                OPTS_USE_COLLECTION="${PACKAGE_COLLECTION_PREFIX}${EQUALS_ARG_VALUE}"
+              else
+                log_stdout "\"${OPTIONS_LONG_COLLECTION}\" value is not an integer, no collections to install"
               fi
             else
               log_stderr "Unsupported option: \e[1m\"--${OPTARG}\"\e[00m" "NOFILE" 1
@@ -870,7 +874,7 @@ create_lockfile() {
     log_stdout "Updating lock file with last-run timestamp"
 
     # update lock file with last-run timestamp
-    echo "${BOOTSTRAPPER_NAME} last ran on $(date +"${TIMESTAMP_FORMAT_SHORT}")" > "${BOOTSTRAPPER_LOCK}"
+    echo "${BOOTSTRAPPER_NAME_FULL} last ran on $(date +"${TIMESTAMP_FORMAT_SHORT}")" > "${BOOTSTRAPPER_LOCK}"
   fi
 }
 ### end: create_lockfile
@@ -889,9 +893,9 @@ determine_os() {
     then
     # source OS_RELEASE to make its contents available for the duration of this run
     source "${OS_RELEASE}" "${SILENCE_OUT}" 2>&1
-    DHO_EXITCODE="${?}"
+    DO_EXITCODE="${?}"
 
-    if [ "${DHO_EXITCODE}" -ne "0" ]
+    if [ "${DO_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to source OS information from \"${OS_RELEASE}\", aborting" 1
     fi
@@ -900,9 +904,9 @@ determine_os() {
   elif [ -f "${OS_RELEASE_RHEL}" ]
     then
     source "${OS_RELEASE_RHEL}" "${SILENCE_OUT}" 2>&1
-    DHOR_EXITCODE="${?}"
+    DO2_EXITCODE="${?}"
 
-    if [ "${DHOR_EXITCODE}" -ne "0" ]
+    if [ "${DO2_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to source OS information from \"${OS_RELEASE_RHEL}\", aborting" 1
     fi
@@ -991,9 +995,9 @@ determine_fetcher() {
     "${BINARY_CURL}" \
     > "${SILENCE_OUT}" 2>&1
 
-  DFC_EXITCODE="${?}"
+  DF_EXITCODE="${?}"
 
-  if [ "${DFC_EXITCODE}" -ne "0" ]
+  if [ "${DF_EXITCODE}" -ne "0" ]
     then
     log_stdout "Unable to find \"${BINARY_CURL}\" binary, attempting to find \"${BINARY_WGET}\""
 
@@ -1001,9 +1005,9 @@ determine_fetcher() {
       "${BINARY_WGET}" \
       > "${SILENCE_OUT}" 2>&1
 
-      DFW_EXITCODE="${?}"
+      DF2_EXITCODE="${?}"
 
-      if [ "${DFW_EXITCODE}" -ne "0" ]
+      if [ "${DF2_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to find \"${BINARY_CURL}\" or \"${BINARY_WGET}\" binaries, aborting" 1
       else
@@ -1076,15 +1080,16 @@ fetch_package_repo() {
         "${REPO_URL}"
     elif [ "${FETCHER_UTIL}" == "${BINARY_WGET}" ]
       then
+      # retrieval logic for wget
       ${FETCHER_UTIL} \
         --quiet \
         --output-document="${REPO_FILE}" \
         "${REPO_URL}"
     fi
 
-    FRC_EXITCODE="${?}"
+    FPR_EXITCODE="${?}"
 
-    if [ "${FRC_EXITCODE}" -ne "0" ]
+    if [ "${FPR_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to fetch repository data from \"${REPO_URL}\" using \"${FETCHER_UTIL}\", aborting" 1
     else
@@ -1114,9 +1119,9 @@ install_package_repo() {
       "yum-complete-transaction" \
       > "${SILENCE_OUT}" 2>&1
 
-    IRW_EXITCODE="${?}"
+    IPR_EXITCODE="${?}"
 
-    if [ "${IRW_EXITCODE}" -ne "0" ]
+    if [ "${IPR_EXITCODE}" -ne "0" ]
       then
       log_stdout "Unable to find \"yum-complete-transaction\", continuing without completing previous transactions"
     else
@@ -1126,9 +1131,9 @@ install_package_repo() {
         --quiet \
         > "${SILENCE_OUT}" 2>&1
 
-      IRY_EXITCODE="${?}"
+      IPR2_EXITCODE="${?}"
 
-      if [ "${IRY_EXITCODE}" -ne "0" ]
+      if [ "${IPR2_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to complete possibly unfinished transactions, aborting" 1
       else
@@ -1144,9 +1149,9 @@ install_package_repo() {
       "${REPO_FILE}" \
       > "${SILENCE_OUT}" 2>&1
 
-    IRR_EXITCODE="${?}"
+    IPR3_EXITCODE="${?}"
 
-    if [ "${IRR_EXITCODE}" -ne "0" ]
+    if [ "${IPR3_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to install YUM repository from \"${REPO_FILE}\", aborting" 1
     else
@@ -1163,9 +1168,9 @@ install_package_repo() {
       "${REPO_FILE}" \
       > "${SILENCE_OUT}" 2>&1
 
-    IRD_EXITCODE="${?}"
+    IPR4_EXITCODE="${?}"
 
-    if [ "${IRD_EXITCODE}" -ne "0" ]
+    if [ "${IPR4_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to install APT repository from \"${REPO_FILE}\", aborting" 1
     else
@@ -1178,9 +1183,9 @@ install_package_repo() {
       update \
       > "${SILENCE_OUT}" 2>&1
 
-    IRA_EXITCODE="${?}"
+    IPR5_EXITCODE="${?}"
 
-    if [ "${IRA_EXITCODE}" -ne "0" ]
+    if [ "${IPR5_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to update APT repository, aborting" 1
     else
@@ -1209,9 +1214,9 @@ remove_puppet_package() {
       "${PACKAGE_REMOVALS[0]}" "${PACKAGE_REMOVALS[1]}" \
       > "${SILENCE_OUT}" 2>&1
 
-    RPY_EXITCODE="${?}"
+    RPP_EXITCODE="${?}"
 
-    if [ "${RPY_EXITCODE}" -ne "0" ]
+    if [ "${RPP_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to remove YUM package(s), aborting" 1
     else
@@ -1228,9 +1233,9 @@ remove_puppet_package() {
       "${PACKAGE_REMOVALS[0]}" "${PACKAGE_REMOVALS[1]}" \
       > "${SILENCE_OUT}" 2>&1
 
-    RPA_EXITCODE="${?}"
+    RPP2_EXITCODE="${?}"
 
-    if [ "${RPA_EXITCODE}" -ne "0" ]
+    if [ "${RPP2_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to remove DEB package(s), aborting" 1
     else
@@ -1260,9 +1265,9 @@ install_puppet_package() {
       "${PACKAGE_NAME}" \
       > "${SILENCE_OUT}" 2>&1
 
-      IPY_EXITCODE="${?}"
+      IPP_EXITCODE="${?}"
 
-    if [ "${IPY_EXITCODE}" -ne "0" ]
+    if [ "${IPP_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to install YUM package, aborting" 1
     else
@@ -1279,9 +1284,9 @@ install_puppet_package() {
       "${PACKAGE_NAME}" \
       > "${SILENCE_OUT}" 2>&1
 
-    IPA_EXITCODE="${?}"
+    IPP2_EXITCODE="${?}"
 
-    if [ "${IPA_EXITCODE}" -ne "0" ]
+    if [ "${IPP2_EXITCODE}" -ne "0" ]
       then
       log_stderr "Unable to install DEB packagem, aborting" 1
     else
@@ -1304,13 +1309,13 @@ install_puppetdb() {
 
     puppet \
       resource \
-      package puppetdb \
+      package ${PACKAGE_PUPPETDB} \
       ensure=latest \
       > "${SILENCE_OUT}" 2>&1
 
-      IPD_EXITCODE="${?}"
+      IP_EXITCODE="${?}"
 
-      if [ "${IPD_EXITCODE}" -ne "0" ]
+      if [ "${IP_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to install PuppetDB package"
       else
@@ -1335,9 +1340,9 @@ install_deepmerge() {
       "deep_merge" \
       > "${SILENCE_OUT}" 2>&1
 
-      IGD_EXITCODE="${?}"
+      ID_EXITCODE="${?}"
 
-      if [ "${IGD_EXITCODE}" -ne "0" ]
+      if [ "${ID_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to install \"deep_merge\" Gem"
       else
@@ -1362,9 +1367,9 @@ install_librarian() {
       "librarian-puppet" \
       > "${SILENCE_OUT}" 2>&1
 
-      IGL_EXITCODE="${?}"
+      IL_EXITCODE="${?}"
 
-      if [ "${IGL_EXITCODE}" -ne "0" ]
+      if [ "${IL_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to install \"librarian-puppet\" Gem"
       else
@@ -1389,9 +1394,9 @@ install_r10k() {
       "r10k" \
       > "${SILENCE_OUT}" 2>&1
 
-      IGR_EXITCODE="${?}"
+      IR_EXITCODE="${?}"
 
-      if [ "${IGR_EXITCODE}" -ne "0" ]
+      if [ "${IR_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to install \"r10k\" Gem"
       else
@@ -1416,9 +1421,9 @@ install_eyaml() {
       "hiera-eyaml" \
       > "${SILENCE_OUT}" 2>&1
 
-      IGE_EXITCODE="${?}"
+      IE_EXITCODE="${?}"
 
-      if [ "${IGE_EXITCODE}" -ne "0" ]
+      if [ "${IE_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to install \"hiera-eyaml\" Gem"
       else
@@ -1443,9 +1448,9 @@ install_lint() {
       "puppet-lint" \
       > "${SILENCE_OUT}" 2>&1
 
-      IGE_EXITCODE="${?}"
+      IL_EXITCODE="${?}"
 
-      if [ "${IGE_EXITCODE}" -ne "0" ]
+      if [ "${IL_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to install \"puppet-lint\" Gem"
       else
@@ -1472,9 +1477,9 @@ install_git() {
       ensure=latest \
       > "${SILENCE_OUT}" 2>&1
 
-    IGP_EXITCODE="${?}"
+    IG_EXITCODE="${?}"
 
-    if [ "${IGP_EXITCODE}" -ne "0" ]
+    if [ "${IG_EXITCODE}" -ne "0" ]
     then
       log_stderr "Unable to install Git package"
     else
@@ -1527,9 +1532,9 @@ fetch_git_repo() {
             "${PUPPET_ETC_PATH}" \
             "${PUPPET_ETC_BACKUP}"
 
-          FGA_EXITCODE="${?}"
+          FGR2_EXITCODE="${?}"
 
-          if [ "${FGA_EXITCODE}" -ne "0" ]
+          if [ "${FGR2_EXITCODE}" -ne "0" ]
             then
             log_stderr "Unable to create backup of ${PUPPET_ETC_PATH}, aborting" 1
           else
@@ -1546,9 +1551,9 @@ fetch_git_repo() {
             "${PUPPET_ETC_PATH}" \
             > "${SILENCE_OUT}" 2>&1
 
-          FGG_EXITCODE="${?}"
+          FGR3_EXITCODE="${?}"
 
-          if [ "${FGG_EXITCODE}" -ne "0" ]
+          if [ "${FGR3_EXITCODE}" -ne "0" ]
             then
             log_stderr "Unable to create git clone of ${PUPPET_GIT_REPO}, aborting" 1
           else
@@ -1596,7 +1601,7 @@ run_agent() {
         --configtimeout="${TIMEOUT}" \
         > "${AGENT_LOG}" 2>&1
 
-      RAP_EXITCODE="${?}"
+      RA_EXITCODE="${?}"
 
       # conditionally show dashed line
       if [ "${OPTS_SHOW_AGENT_LOG}" == "true" ]
@@ -1607,7 +1612,7 @@ run_agent() {
       fi
 
       # TODO: check for error-code to see if a timeout or something else occurred
-      if [ "${RAP_EXITCODE}" -ne "0" ]
+      if [ "${RA_EXITCODE}" -ne "0" ]
         then
         log_stderr "Unable to complete initial Puppet Agent before timing out" 0
       else
